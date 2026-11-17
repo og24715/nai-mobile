@@ -1,5 +1,5 @@
 node_modules/
 dist/
-token.txt
+dist-server/
 outputs/*.png
 nai-mobile.service
