@@ -172,7 +172,7 @@ export function GenerateForm({ form }: { form: FormState }) {
   };
 
   return (
-    <div className={chipEditor ? "pb-16" : undefined}>
+    <div className={chipEditor ? "pb-36" : undefined}>
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
         <AccordionTrigger className="py-3.5 text-[15px]">
@@ -194,9 +194,6 @@ export function GenerateForm({ form }: { form: FormState }) {
                 <TagField
                   suggest
                   model={form.model}
-                  id="prompt"
-                  placeholder="1girl, ..."
-                  className="min-h-[84px] text-base"
                   value={form.prompt}
                   onChange={form.setPrompt}
                   {...chipProps("prompt")}
@@ -206,8 +203,6 @@ export function GenerateForm({ form }: { form: FormState }) {
                 <TagField
                   suggest
                   model={form.model}
-                  id="negative"
-                  className="min-h-[56px] text-base"
                   value={form.negative}
                   onChange={form.setNegative}
                   {...chipProps("negative")}
@@ -388,7 +383,6 @@ export function GenerateForm({ form }: { form: FormState }) {
                       suggest
                       model={form.model}
                       character
-                      className="min-h-[48px] text-base"
                       value={c.prompt}
                       onChange={(v) => setChar(i, { prompt: v })}
                       {...chipProps(`char-${i}-prompt`)}
@@ -399,7 +393,6 @@ export function GenerateForm({ form }: { form: FormState }) {
                       suggest
                       model={form.model}
                       character
-                      className="min-h-[44px] text-base"
                       value={c.negative}
                       onChange={(v) => setChar(i, { negative: v })}
                       {...chipProps(`char-${i}-negative`)}

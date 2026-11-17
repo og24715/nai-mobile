@@ -8,8 +8,9 @@
 //     Negative weights (`-n:: tag ::`) are sections with weight < 0.
 //   - raw chunks: anything containing { } [ ] (the legacy ×1.05 /
 //     ÷1.05 cumulative operators) or an unbalanced / unparseable `::`
-//     construction. Raw chunks are preserved verbatim and are
-//     display-only in the editor.
+//     construction. Raw chunks are preserved verbatim; the editor
+//     can replace a raw chunk's text as-is (#28) but gives it no
+//     weight / prefix controls.
 //
 // Serialization joins segment bodies with ",". Unedited segments keep
 // their exact original body text, so parse -> serialize reproduces the
@@ -180,6 +181,59 @@ export function setChipWeight(
     w === 1
       ? { kind: "tag", text: tagText, body: "", dirty: true }
       : { kind: "weighted", weight: w, tags: [tagText], body: "", dirty: true };
+  next.splice(segIdx, 1, remaining, split);
+  return { segs: next, select: { seg: segIdx + 1, tag: 0 } };
+}
+
+// Replace one chip's text (improvement #28 — this is what replaced
+// free-text editing). Plain tag / single-tag section -> the text is
+// rewritten in place, keeping the weight and any source#-style
+// prefix. A tag inside a multi-tag section SPLITS OUT into its own
+// section carrying the edited text (same rule as weight edits). A
+// raw chunk's body is replaced verbatim at the same position. Empty
+// text deletes the chip (no `select` in the result, so the caller
+// closes the editor bar).
+export function setChipText(
+  segs: Segment[],
+  segIdx: number,
+  tagIdx: number,
+  newText: string,
+): EditResult {
+  const seg = segs[segIdx];
+  if (!seg) return { segs };
+  const text = newText.trim();
+  if (!text) return { segs: deleteChip(segs, segIdx, tagIdx) };
+  const next = segs.slice();
+  if (seg.kind === "raw") {
+    // Raw bodies are emitted verbatim by the serializer; rebuild the
+    // body in canonical join form (a leading space except at index 0,
+    // matching how edited non-raw segments are joined).
+    next[segIdx] = { kind: "raw", body: (segIdx === 0 ? "" : " ") + text };
+    return { segs: next, select: { seg: segIdx, tag: 0 } };
+  }
+  if (seg.kind === "tag") {
+    next[segIdx] = { ...seg, text, body: "", dirty: true };
+    return { segs: next, select: { seg: segIdx, tag: 0 } };
+  }
+  if (seg.tags.length === 1) {
+    next[segIdx] = { ...seg, tags: [text], body: "", dirty: true };
+    return { segs: next, select: { seg: segIdx, tag: 0 } };
+  }
+  const rest = seg.tags.filter((_, j) => j !== tagIdx);
+  const remaining: Segment = {
+    kind: "weighted",
+    weight: seg.weight,
+    tags: rest,
+    body: "",
+    dirty: true,
+  };
+  const split: Segment = {
+    kind: "weighted",
+    weight: seg.weight,
+    tags: [text],
+    body: "",
+    dirty: true,
+  };
   next.splice(segIdx, 1, remaining, split);
   return { segs: next, select: { seg: segIdx + 1, tag: 0 } };
 }
