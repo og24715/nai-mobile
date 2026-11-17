@@ -118,7 +118,7 @@ const PAGE = String.raw`<!doctype html>
 <style>
 :root{--bg:#0b0b0c;--surface:#141416;--surface2:#1d1d20;--border:#26262b;--text:#f5f5f4;--muted:#a1a1aa;--accent:#e94560;--ok:#34d399;--err:#f87171}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);line-height:1.7;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
-main{max-width:640px;margin:0 auto;padding:56px 20px 96px}h1{font-size:32px;font-weight:700;margin:0 0 12px}h2{font-size:18px;margin:0 0 12px}
+main{max-width:640px;margin:0 auto;padding:32px 20px 128px}h1{font-size:32px;font-weight:700;margin:0 0 12px}h2{font-size:18px;margin:0 0 12px}
 .lead{color:var(--muted);margin:0}section{margin-bottom:56px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;margin-top:24px}
 label{display:block;font-size:13px;color:var(--muted);margin:18px 0 6px}label:first-child{margin-top:0}
@@ -129,15 +129,27 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 .status{margin-top:16px;font-size:14px;color:var(--muted);white-space:pre-wrap}.status.err{color:var(--err)}.status.ok{color:var(--ok)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.grid img{width:100%;height:auto;display:block;border-radius:12px}
 .hint{font-size:12px;color:var(--muted)}
-.toprow{display:flex;justify-content:flex-end;margin-bottom:8px}.settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
+.settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
+.fab{position:fixed;right:20px;bottom:20px;width:60px;height:60px;min-height:60px;border-radius:50%;padding:0;margin:0;font-size:24px;line-height:1;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:40}
+.modal{display:none;position:fixed;inset:0;margin:0;background:var(--bg);overflow-y:auto;z-index:50}
+.modal.open{display:block}
+.modal-inner{max-width:640px;margin:0 auto;padding:20px 20px 64px}
+.modalhead{display:flex;justify-content:space-between;align-items:center}
+.modalhead h2{margin:0}
+.closebtn{width:44px;height:44px;min-height:44px;border-radius:50%;padding:0;margin:0;font-size:22px;line-height:1;background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.modalfoot{margin-top:32px}
 .val{color:var(--text);font-weight:600}input[type=range]{padding:0;accent-color:var(--accent)}
 .hero{line-height:0}.hero img{width:100%;height:auto;display:block}
 </style></head><body>
 <div class="hero" id="heroWrap" hidden><a id="heroLink" href="" target="_blank" rel="noopener"><img id="heroImg" alt=""></a></div>
 <main>
-<div class="toprow"><a class="settings" href="setup">⚙ 設定</a></div>
-
-<section><div class="card">
+<div class="status" id="status"></div>
+<section><h2>最近の生成</h2><div class="grid" id="recent"></div></section>
+</main>
+<button class="fab" id="fab" type="button" aria-label="生成フォームを開く">✎</button>
+<div class="modal" id="modal"><div class="modal-inner">
+<div class="modalhead"><h2>生成</h2><button class="closebtn" id="modalClose" type="button" aria-label="閉じる">×</button></div>
+<div class="card">
 <label>プロンプト</label><textarea id="prompt" placeholder="1girl, ..."></textarea>
 <label>ネガティブ (UC)</label><textarea id="negative" style="min-height:56px">lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract]</textarea>
 <div class="row"><div><label>モデル</label><select id="model">
@@ -154,8 +166,8 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <option value="1216x832">1216 × 832（横）</option>
 <option value="1024x1024">1024 × 1024（正方形）</option>
 </select></div></div>
-<div class="row"><div><label>Steps <span class="val" id="stepsVal">28</span></label><input type="range" id="steps" value="28" min="1" max="50" step="1"></div>
-<div><label>Scale (CFG) <span class="val" id="scaleVal">5.0</span></label><input type="range" id="scale" value="5" step="0.1" min="0" max="20"></div></div>
+<div><label>Steps <span class="val" id="stepsVal">28</span></label><input type="range" id="steps" value="28" min="1" max="50" step="1"></div>
+<div><label>Scale (CFG) <span class="val" id="scaleVal">5.0</span></label><input type="range" id="scale" value="5" step="0.1" min="0" max="20"></div>
 <div class="row"><div><label>Sampler</label><select id="sampler">
 <option value="k_euler_ancestral" selected>Euler Ancestral</option>
 <option value="k_euler">Euler</option>
@@ -170,12 +182,9 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <label>キャラ2 プロンプト</label><textarea id="char2" style="min-height:48px"></textarea>
 <label>キャラ2 ネガティブ</label><input id="char2neg">
 <button id="gen" type="button">生成する</button>
-<div class="status" id="status"></div>
-<div class="grid" id="result"></div>
-</div></section>
-
-<section><h2>最近の生成</h2><div class="grid" id="recent"></div></section>
-</main>
+</div>
+<p class="modalfoot"><a class="settings" href="setup">⚙ 設定</a></p>
+</div></div>
 <script>
 const $=id=>document.getElementById(id);
 const fields=['prompt','negative','model','size','steps','scale','sampler','seed','char1','char1neg','char2','char2neg'];
@@ -186,12 +195,17 @@ syncVal('scale','scaleVal',v=>v.toFixed(1));
 async function checkToken(){try{const r=await fetch('api/status');const j=await r.json();if(!j.hasToken){location.replace('setup');}}catch(e){}}
 function setHero(url){if(!url){$('heroWrap').hidden=true;return;}$('heroImg').src=url;$('heroLink').href=url;$('heroWrap').hidden=false;}
 async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';setHero(j.items&&j.items.length?j.items[0].url:'');for(const it of j.items){const a=document.createElement('a');a.href=it.url;const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);a.addEventListener('click',e=>{e.preventDefault();setHero(it.url);window.scrollTo({top:0,behavior:'smooth'});});$('recent').appendChild(a);}}catch(e){}}
-$('gen').onclick=async()=>{const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
+function openModal(){$('modal').classList.add('open');document.body.style.overflow='hidden';}
+function closeModal(){$('modal').classList.remove('open');document.body.style.overflow='';}
+$('fab').onclick=openModal;
+$('modalClose').onclick=closeModal;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+$('gen').onclick=async()=>{closeModal();window.scrollTo(0,0);const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
 const [w,h]=$('size').value.split('x').map(Number);
 const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:[{prompt:$('char1').value,negative:$('char1neg').value},{prompt:$('char2').value,negative:$('char2neg').value}]};
 try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();
 if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.status);}
-else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);$('result').innerHTML='';for(const u of j.images){const a=document.createElement('a');a.href=u;a.target='_blank';const im=document.createElement('img');im.src=u;a.appendChild(im);$('result').appendChild(a);}if(j.images&&j.images.length)setHero(j.images[0]);recent();}
+else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);if(j.images&&j.images.length)setHero(j.images[0]);recent();}
 }catch(e){st.className='status err';st.textContent='通信エラー: '+e;}
 $('gen').disabled=false;};
 checkToken();recent();
@@ -288,7 +302,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && p === "api/generate") {
       const token = readToken();
-      if (!token) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。設定ページ（右上の ⚙）から Persistent API Token を保存してください。" }); return; }
+      if (!token) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。設定ページから Persistent API Token を保存してください。" }); return; }
       const g = JSON.parse((await readBody(req)).toString("utf8")) as GenInput;
       if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "プロンプトが空です" }); return; }
       const { payload, seed } = buildPayload(g);
