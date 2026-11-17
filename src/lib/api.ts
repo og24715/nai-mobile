@@ -16,6 +16,13 @@ export interface GenerateRequest {
   sampler: string;
   seed: number | null;
   characters: { prompt: string; negative: string }[];
+  // img2img (improvement #43): present only when a base image is
+  // attached in the form. image is PNG base64 (no data: prefix),
+  // already cover-cropped/resized by the client to the selected
+  // generation size; strength / noise are 0..1.
+  image?: string;
+  strength?: number;
+  noise?: number;
 }
 
 export interface GenerateResponse {

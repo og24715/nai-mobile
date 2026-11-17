@@ -34,6 +34,14 @@ interface GenInput {
   width?: number; height?: number; steps?: number; scale?: number;
   sampler?: string; seed?: number | string | null;
   characters?: CharInput[];
+  // img2img (improvement #43): a base image attached in the form.
+  // image is PNG base64 (the client cover-crops/resizes it to the
+  // selected generation size); strength / noise are 0..1.
+  image?: string; strength?: number; noise?: number;
+}
+
+function clamp01(v: number, fallback: number): number {
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
 }
 
 const V4_MODELS = new Set([
@@ -121,7 +129,21 @@ function buildPayload(g: GenInput) {
       enabled: true,
     }));
   }
-  return { payload: { input, model, action: "generate", parameters }, seed, model };
+  // img2img (improvement #43): with a base image attached, the
+  // request becomes an img2img generation on the same payload —
+  // prompt / model / steps / CFG / sampler / v4 structures are
+  // exactly the text-to-image ones; only the action and the image
+  // parameters change. extra_noise_seed follows the effective
+  // seed: the user's seed when one is set; on the seedless path
+  // the generate handler fills it with the retry seed it adds.
+  const isImg2Img = typeof g.image === "string" && g.image.length > 0;
+  if (isImg2Img) {
+    parameters.image = String(g.image).replace(/^data:image\/[a-z+]+;base64,/i, "");
+    parameters.strength = clamp01(Number(g.strength), 0.7);
+    parameters.noise = clamp01(Number(g.noise), 0);
+    if (seed != null) parameters.extra_noise_seed = seed;
+  }
+  return { payload: { input, model, action: isImg2Img ? "img2img" : "generate", parameters }, seed, model };
 }
 
 const MIME: Record<string, string> = {
@@ -143,10 +165,10 @@ function sendJson(res: http.ServerResponse, code: number, obj: unknown) {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8", "Content-Length": body.length, "Cache-Control": "no-store" });
   res.end(body);
 }
-function readBody(req: http.IncomingMessage): Promise<Buffer> {
+function readBody(req: http.IncomingMessage, maxBytes = 2_000_000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []; let total = 0;
-    req.on("data", (c: Buffer) => { total += c.length; if (total > 2_000_000) { reject(new Error("body too large")); req.destroy(); return; } chunks.push(c); });
+    req.on("data", (c: Buffer) => { total += c.length; if (total > maxBytes) { reject(new Error("body too large")); req.destroy(); return; } chunks.push(c); });
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
@@ -756,7 +778,7 @@ const server = http.createServer(async (req, res) => {
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
       if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
-      const g = JSON.parse((await readBody(req)).toString("utf8")) as GenInput;
+      const g = JSON.parse((await readBody(req, 24_000_000)).toString("utf8")) as GenInput;
       if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "プロンプトが空です" }); return; }
       const { payload, seed } = buildPayload(g);
       let usedSeed: number | null = seed;
@@ -780,6 +802,11 @@ const server = http.createServer(async (req, res) => {
       if (!resp.ok && resp.status === 400 && usedSeed == null) {
         const retrySeed = Math.floor(Math.random() * 4294967295);
         (payload.parameters as Record<string, unknown>).seed = retrySeed;
+        // img2img (#43): the extra noise seed follows the effective
+        // seed, so the retry seed becomes it on this path too.
+        if (typeof (payload.parameters as Record<string, unknown>).image === "string") {
+          (payload.parameters as Record<string, unknown>).extra_noise_seed = retrySeed;
+        }
         try {
           const retry = await callNAI();
           if (retry.ok) { resp = retry; usedSeed = retrySeed; }

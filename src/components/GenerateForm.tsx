@@ -17,6 +17,16 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentMedia,
+  AttachmentTitle,
+} from "@/components/ui/attachment";
+import { X } from "lucide-react";
+import {
   TagField,
   type ChipEditorState,
   type ChipSel,
@@ -42,6 +52,17 @@ export interface FormState {
   sampler: string;
   seed: string;
   chars: CharPrompt[];
+  // img2img (improvement #43): the attached base image is session
+  // state in MainPage (a File cannot persist); only its display
+  // name + thumbnail URL reach the form. strength / noise are
+  // persisted fields like the others.
+  baseImage: { name: string; url: string } | null;
+  onPickBaseImage: (f: File) => void;
+  onClearBaseImage: () => void;
+  strength: string;
+  noise: string;
+  setStrength: (v: string) => void;
+  setNoise: (v: string) => void;
   setPrompt: (v: string) => void;
   setNegative: (v: string) => void;
   setModel: (v: string) => void;
@@ -93,6 +114,8 @@ const sectionContentCls = "flex flex-col gap-[18px] pt-1 pb-2";
 export function GenerateForm({ form }: { form: FormState }) {
   const stepsNum = numOr(form.steps, 28);
   const scaleNum = numOr(form.scale, 5);
+  const strengthNum = numOr(form.strength, 0.7);
+  const noiseNum = numOr(form.noise, 0);
   // On Opus, generations are free up to 28 steps; past that they
   // consume Anlas. The steps UI turns amber as the warning signal.
   const stepsOver = stepsNum > 28;
@@ -369,6 +392,95 @@ export function GenerateForm({ form }: { form: FormState }) {
                 onChange={(e) => form.setSeed(e.target.value)}
               />
             </div>
+
+            {/* img2img base image (improvement #43): a device file
+                only. While one is attached, generation becomes an
+                img2img run on this image (cover-cropped to the
+                selected size at send time); the img2img badge by
+                the label is the mode cue. The attachment stays in
+                place after a generation so he can iterate; the
+                sliders below it only exist while attached. */}
+            <div>
+              <Label className={labelCls}>
+                ベース画像
+                {form.baseImage && (
+                  <span className="ml-1.5 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                    img2img
+                  </span>
+                )}
+              </Label>
+              {form.baseImage ? (
+                <Attachment className="w-full">
+                  <AttachmentMedia variant="image">
+                    <img src={form.baseImage.url} alt="" />
+                  </AttachmentMedia>
+                  <AttachmentContent>
+                    <AttachmentTitle>{form.baseImage.name}</AttachmentTitle>
+                    <AttachmentDescription>
+                      この画像をベースに生成します
+                    </AttachmentDescription>
+                  </AttachmentContent>
+                  <AttachmentActions>
+                    <AttachmentAction
+                      aria-label="ベース画像を外す"
+                      onClick={form.onClearBaseImage}
+                    >
+                      <X />
+                    </AttachmentAction>
+                  </AttachmentActions>
+                </Attachment>
+              ) : (
+                <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
+                  画像を選ぶ
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) form.onPickBaseImage(f);
+                    }}
+                  />
+                </label>
+              )}
+            </div>
+
+            {form.baseImage && (
+              <div>
+                <Label className={labelCls}>
+                  Strength{" "}
+                  <span className="text-lg font-semibold tabular-nums text-foreground">
+                    {strengthNum.toFixed(2)}
+                  </span>
+                </Label>
+                <Slider
+                  value={[strengthNum]}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onValueChange={(v) => form.setStrength(String(Array.isArray(v) ? v[0] : v))}
+                />
+              </div>
+            )}
+
+            {form.baseImage && (
+              <div>
+                <Label className={labelCls}>
+                  Noise{" "}
+                  <span className="text-lg font-semibold tabular-nums text-foreground">
+                    {noiseNum.toFixed(2)}
+                  </span>
+                </Label>
+                <Slider
+                  value={[noiseNum]}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onValueChange={(v) => form.setNoise(String(Array.isArray(v) ? v[0] : v))}
+                />
+              </div>
+            )}
           </div>
         </AccordionContent>
       </AccordionItem>

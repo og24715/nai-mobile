@@ -20,6 +20,7 @@ import {
   type SubscriptionInfo,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
+import { fileToCoverPngBase64 } from "@/lib/baseImage";
 import {
   mapSettingsToForm,
   readNaiSettings,
@@ -38,6 +39,26 @@ export default function MainPage() {
   const [sampler, setSampler] = usePersistedField("sampler", "k_euler_ancestral");
   const [seed, setSeed] = usePersistedField("seed", "");
   const [chars, updateChars] = useCharacters();
+  // img2img (improvement #43): strength / noise persist like the
+  // other fields ("nai.strength" / "nai.noise"); the base image
+  // itself is a File and cannot persist, so it is session state
+  // only — it survives drawer open/close and stays attached after
+  // a generation until removed.
+  const [strength, setStrength] = usePersistedField("strength", "0.7");
+  const [noise, setNoise] = usePersistedField("noise", "0");
+  const [baseImage, setBaseImage] = useState<{ file: File; url: string } | null>(null);
+  const pickBaseImage = (f: File) => {
+    setBaseImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return { file: f, url: URL.createObjectURL(f) };
+    });
+  };
+  const clearBaseImage = () => {
+    setBaseImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  };
 
   const [heroUrl, setHeroUrl] = useState("");
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
@@ -269,6 +290,19 @@ export default function MainPage() {
     setStatus({ kind: "", text: "生成中…（数十秒かかることがあります）" });
     setGenerating(true);
     const [w, h] = size.split("x").map(Number);
+    // img2img (#43): with a base image attached, convert it to a
+    // PNG at the selected size (cover-fit) and send it along; the
+    // server then builds an img2img request instead of generate.
+    let image: string | undefined;
+    if (baseImage) {
+      try {
+        image = await fileToCoverPngBase64(baseImage.file, w, h);
+      } catch {
+        setStatus({ kind: "err", text: "ベース画像を読み込めませんでした" });
+        setGenerating(false);
+        return;
+      }
+    }
     const body: GenerateRequest = {
       prompt,
       negative,
@@ -284,6 +318,7 @@ export default function MainPage() {
       // written back into the seed field or localStorage.
       seed: seed === "" ? null : Number(seed),
       characters: chars.map((c) => ({ prompt: c.prompt, negative: c.negative })),
+      ...(image ? { image, strength: Number(strength), noise: Number(noise) } : {}),
     };
     try {
       const { status: httpStatus, json: j } = await requestGenerate(token, body);
@@ -311,6 +346,15 @@ export default function MainPage() {
     sampler,
     seed,
     chars,
+    baseImage: baseImage
+      ? { name: baseImage.file.name, url: baseImage.url }
+      : null,
+    onPickBaseImage: pickBaseImage,
+    onClearBaseImage: clearBaseImage,
+    strength,
+    noise,
+    setStrength,
+    setNoise,
     setPrompt,
     setNegative,
     setModel,
