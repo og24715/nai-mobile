@@ -24,7 +24,7 @@ npm start       # node dist/server.js
 
 NovelAI の Persistent API Token が必要 (NovelAI の Account Settings から取得)。
 
-- ページ上の欄に入力して保存するか、`token.txt` に直接書く
+- 設定ページ (`/setup`、生成画面右上の ⚙ からも移動可) で入力して保存するか、`token.txt` に直接書く。未登録のときは生成画面を開くと自動で設定ページへ移動する
 - トークンはこの PC 上の `token.txt` (権限 600) にだけ保存され、API への送信以外に使わない
 - `token.txt` は .gitignore で除外されており、リポジトリには絶対に含めない
 

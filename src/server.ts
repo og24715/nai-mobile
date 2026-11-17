@@ -114,7 +114,7 @@ function buildPayload(g: GenInput) {
 const PAGE = String.raw`<!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>NovelAI モバイル</title>
+<title>nai-mobile</title>
 <style>
 :root{--bg:#0b0b0c;--surface:#141416;--surface2:#1d1d20;--border:#26262b;--text:#f5f5f4;--muted:#a1a1aa;--accent:#e94560;--ok:#34d399;--err:#f87171}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);line-height:1.7;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
@@ -129,17 +129,9 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 .status{margin-top:16px;font-size:14px;color:var(--muted);white-space:pre-wrap}.status.err{color:var(--err)}.status.ok{color:var(--ok)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.grid img{width:100%;height:auto;display:block;border-radius:12px}
 .hint{font-size:12px;color:var(--muted)}
+.toprow{display:flex;justify-content:flex-end;margin-bottom:8px}.settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
 </style></head><body><main>
-<header><h1>NovelAI モバイル</h1><p class="lead">スマホ用 画像生成フロント（NovelAI API）</p></header>
-
-<section><div class="card">
-<h2>APIトークン</h2>
-<p class="hint" id="tokenState">確認中…</p>
-<label>Persistent API Token（このPCにだけ保存されます）</label>
-<input type="password" id="token" autocomplete="off" placeholder="pst-...">
-<button class="sub" id="saveToken" type="button">トークンを保存</button>
-<p class="hint">取得: novelai.net → Account Settings → Get Persistent API Token。チャットには送らないでください。</p>
-</div></section>
+<div class="toprow"><a class="settings" href="setup">⚙ 設定</a></div>
 
 <section><div class="card">
 <label>プロンプト</label><textarea id="prompt" placeholder="1girl, ..."></textarea>
@@ -184,9 +176,8 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 const $=id=>document.getElementById(id);
 const fields=['prompt','negative','model','size','steps','scale','sampler','seed','char1','char1neg','char2','char2neg'];
 for(const f of fields){const v=localStorage.getItem('nai.'+f);if(v!==null&&$(f).tagName!=='SELECT'||v!==null&&$(f).value===''){} if(v!==null)$(f).value=v; $(f).addEventListener('change',()=>localStorage.setItem('nai.'+f,$(f).value));}
-async function status(){try{const r=await fetch('api/status');const j=await r.json();$('tokenState').textContent=j.hasToken?'保存済みトークン: あり':'保存済みトークン: なし（上の欄から設定してください）';}catch(e){}}
+async function checkToken(){try{const r=await fetch('api/status');const j=await r.json();if(!j.hasToken){location.replace('setup');}}catch(e){}}
 async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';for(const it of j.items){const a=document.createElement('a');a.href=it.url;a.target='_blank';const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);$('recent').appendChild(a);}}catch(e){}}
-$('saveToken').onclick=async()=>{const t=$('token').value.trim();if(!t){alert('トークンが空です');return;}const r=await fetch('api/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});const j=await r.json();if(j.ok){$('token').value='';status();alert('保存しました');}else alert(j.error||'保存失敗');};
 $('gen').onclick=async()=>{const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
 const [w,h]=$('size').value.split('x').map(Number);
 const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:[{prompt:$('char1').value,negative:$('char1neg').value},{prompt:$('char2').value,negative:$('char2neg').value}]};
@@ -195,7 +186,43 @@ if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.sta
 else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);$('result').innerHTML='';for(const u of j.images){const a=document.createElement('a');a.href=u;a.target='_blank';const im=document.createElement('img');im.src=u;a.appendChild(im);$('result').appendChild(a);}recent();}
 }catch(e){st.className='status err';st.textContent='通信エラー: '+e;}
 $('gen').disabled=false;};
-status();recent();
+checkToken();recent();
+</script></body></html>`;
+
+const SETUP_PAGE = String.raw`<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>nai-mobile 設定</title>
+<style>
+:root{--bg:#0b0b0c;--surface:#141416;--surface2:#1d1d20;--border:#26262b;--text:#f5f5f4;--muted:#a1a1aa;--accent:#e94560;--ok:#34d399;--err:#f87171}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);line-height:1.7;font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:640px;margin:0 auto;padding:56px 20px 96px}h1{font-size:32px;font-weight:700;margin:0 0 12px}h2{font-size:18px;margin:0 0 12px}
+.lead{color:var(--muted);margin:0}section{margin-bottom:56px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;margin-top:24px}
+label{display:block;font-size:13px;color:var(--muted);margin:18px 0 6px}label:first-child{margin-top:0}
+textarea,input,select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:12px;font-size:16px}
+button{background:var(--accent);color:#fff;border:0;border-radius:999px;padding:14px 28px;font-size:16px;min-height:52px;width:100%;margin-top:24px}
+button.sub{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.hint{font-size:12px;color:var(--muted)}
+.settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
+</style></head><body><main>
+<header><h1>トークン設定</h1><p class="lead">NovelAI の Persistent API Token をこのPCに保存します</p></header>
+
+<section><div class="card">
+<h2>APIトークン</h2>
+<p class="hint" id="tokenState">確認中…</p>
+<label>Persistent API Token（このPCにだけ保存されます）</label>
+<input type="password" id="token" autocomplete="off" placeholder="pst-...">
+<button class="sub" id="saveToken" type="button">トークンを保存</button>
+<p class="hint">取得: novelai.net → Account Settings → Get Persistent API Token。チャットには送らないでください。</p>
+<p style="margin-top:24px"><a class="settings" href="./">← 生成画面へ戻る</a></p>
+</div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+async function status(){try{const r=await fetch('api/status');const j=await r.json();$('tokenState').textContent=j.hasToken?'保存済みトークン: あり（差し替える場合は新しいトークンを保存）':'保存済みトークン: なし';}catch(e){}}
+$('saveToken').onclick=async()=>{const t=$('token').value.trim();if(!t){alert('トークンが空です');return;}try{const r=await fetch('api/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});const j=await r.json();if(j.ok){location.replace('./');}else alert(j.error||'保存失敗');}catch(e){alert('通信エラー: '+e);}};
+status();
 </script></body></html>`;
 
 function sendJson(res: http.ServerResponse, code: number, obj: unknown) {
@@ -216,8 +243,13 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", "http://localhost");
     const p = url.pathname.replace(/^\/+/, "");
-    if (req.method === "GET" && (p === "" )) {
+    if (req.method === "GET" && (p === "" || p === "index.html")) {
       const body = Buffer.from(PAGE);
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Length": body.length });
+      res.end(body); return;
+    }
+    if (req.method === "GET" && p === "setup") {
+      const body = Buffer.from(SETUP_PAGE);
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Length": body.length });
       res.end(body); return;
     }
@@ -248,7 +280,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && p === "api/generate") {
       const token = readToken();
-      if (!token) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。ページ上の欄から Persistent API Token を保存してください。" }); return; }
+      if (!token) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。設定ページ（右上の ⚙）から Persistent API Token を保存してください。" }); return; }
       const g = JSON.parse((await readBody(req)).toString("utf8")) as GenInput;
       if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "プロンプトが空です" }); return; }
       const { payload, seed } = buildPayload(g);
