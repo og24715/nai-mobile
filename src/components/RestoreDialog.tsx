@@ -140,7 +140,7 @@ export function RestoreDialog({ restored, onApply, onCancel }: Props) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>画像から復元</DialogTitle>
+          <DialogTitle className="text-xl">画像から復元</DialogTitle>
           <DialogDescription>
             取り込む項目を選んでください。
           </DialogDescription>
@@ -167,13 +167,13 @@ export function RestoreDialog({ restored, onApply, onCancel }: Props) {
                 <span className="block text-sm font-medium">
                   {g.label}
                   {!g.present && (
-                    <span className="ml-2 text-[13px] font-normal text-muted-foreground">
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
                       なし
                     </span>
                   )}
                 </span>
                 {g.present && g.preview && (
-                  <span className="block text-[13px] break-words whitespace-pre-wrap text-muted-foreground">
+                  <span className="block text-sm break-words whitespace-pre-wrap text-muted-foreground">
                     {g.preview}
                   </span>
                 )}

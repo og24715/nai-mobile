@@ -7,7 +7,9 @@ interface Props {
 }
 
 // Bottom-right floating buttons: ▶ generates immediately with the
-// current (auto-saved) form values, ✎ opens the form modal.
+// current (auto-saved) form values, ✎ opens the form modal. The
+// glyph size is pinned to 24px (the pre-#35 text-2xl rendering): it
+// is an icon size, not typography, so it stays out of the #35 scale.
 export function FabRow({ generating, onGenerate, onOpenForm }: Props) {
   return (
     <div className="fixed right-5 bottom-5 z-40 flex gap-3">
@@ -16,7 +18,7 @@ export function FabRow({ generating, onGenerate, onOpenForm }: Props) {
         aria-label="生成する"
         disabled={generating}
         onClick={onGenerate}
-        className="h-[60px] w-[60px] rounded-full p-0 text-2xl shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
+        className="h-[60px] w-[60px] rounded-full p-0 text-[24px] shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
       >
         ▶
       </Button>
@@ -25,7 +27,7 @@ export function FabRow({ generating, onGenerate, onOpenForm }: Props) {
         variant="secondary"
         aria-label="生成フォームを開く"
         onClick={onOpenForm}
-        className="h-[60px] w-[60px] rounded-full border border-border p-0 text-2xl shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
+        className="h-[60px] w-[60px] rounded-full border border-border p-0 text-[24px] shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
       >
         ✎
       </Button>

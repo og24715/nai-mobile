@@ -44,7 +44,7 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
             #10). Both run through the same local parse + selection
             dialog; nothing is uploaded. */}
         <div className="mt-1 flex flex-wrap items-center gap-1">
-          <label className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          <label className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
             画像から復元
             <input
               type="file"
@@ -61,14 +61,14 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
             <button
               type="button"
               onClick={onRestoreHero}
-              className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               この画像から復元
             </button>
           )}
         </div>
         <section className="mb-14">
-          <h2 className="mb-3 text-lg font-semibold">最近の生成</h2>
+          <h2 className="mb-3 text-xl font-semibold">最近の生成</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {items.map((it) => (
               <a

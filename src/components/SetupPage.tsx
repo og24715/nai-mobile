@@ -32,7 +32,7 @@ export default function SetupPage() {
   return (
     <main className="mx-auto max-w-[640px] px-5 pt-14 pb-24">
       <header>
-        <h1 className="mb-3 text-[32px] font-bold">トークン設定</h1>
+        <h1 className="mb-3 text-2xl font-bold">トークン設定</h1>
         <p className="text-muted-foreground">
           NovelAI の Persistent API Token をこのブラウザに保存します
         </p>
@@ -48,7 +48,7 @@ export default function SetupPage() {
           </p>
           <Label
             htmlFor="token"
-            className="mt-[18px] mb-1.5 block text-[13px] font-normal text-muted-foreground"
+            className="mt-[18px] mb-1.5 block text-sm font-medium text-muted-foreground"
           >
             Persistent API Token（このブラウザの localStorage にだけ保存されます）
           </Label>
@@ -89,7 +89,7 @@ export default function SetupPage() {
           <div className="mt-6 flex items-center gap-3">
             <a
               href="./"
-              className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] text-muted-foreground no-underline"
+              className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground no-underline"
             >
               ← 生成画面へ戻る
             </a>

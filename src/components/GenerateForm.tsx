@@ -53,7 +53,7 @@ export interface FormState {
   updateChars: (next: CharPrompt[]) => void;
 }
 
-const labelCls = "mb-1.5 block text-[13px] font-normal text-muted-foreground";
+const labelCls = "mb-1.5 block text-sm font-medium text-muted-foreground";
 
 function numOr(v: string, fallback: number): number {
   const n = Number(v);
@@ -174,7 +174,7 @@ export function GenerateForm({ form }: { form: FormState }) {
     <div className={chipEditor ? "pb-36" : undefined}>
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
-        <AccordionTrigger className="py-3.5 text-[15px]">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold">
           プロンプト
         </AccordionTrigger>
         <AccordionContent>
@@ -213,7 +213,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="settings">
-        <AccordionTrigger className="py-3.5 text-[15px]">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold">
           基本設定
         </AccordionTrigger>
         <AccordionContent>
@@ -287,14 +287,14 @@ export function GenerateForm({ form }: { form: FormState }) {
                 Steps{" "}
                 <span
                   className={cn(
-                    "font-semibold text-foreground",
+                    "text-lg font-semibold tabular-nums text-foreground",
                     stepsOver && "text-amber-500",
                   )}
                 >
                   {Math.round(stepsNum)}
                 </span>
                 {stepsOver && (
-                  <span className="ml-1.5 text-[11px] font-medium text-amber-500">
+                  <span className="ml-1.5 text-xs font-medium text-amber-500">
                     Anlas消費
                   </span>
                 )}
@@ -314,7 +314,7 @@ export function GenerateForm({ form }: { form: FormState }) {
 
             <div>
               <Label className={labelCls}>
-                Scale (CFG) <span className="font-semibold text-foreground">{scaleNum.toFixed(1)}</span>
+                Scale (CFG) <span className="text-lg font-semibold tabular-nums text-foreground">{scaleNum.toFixed(1)}</span>
               </Label>
               <Slider
                 value={[scaleNum]}
@@ -343,9 +343,9 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="characters">
-        <AccordionTrigger className="py-3.5 text-[15px]">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold">
           キャラクター
-          <span className="ml-1.5 text-[12px] font-normal text-muted-foreground">
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
             （V4以降）
           </span>
         </AccordionTrigger>
@@ -354,7 +354,7 @@ export function GenerateForm({ form }: { form: FormState }) {
             {form.chars.map((c, i) => (
               <div key={i} className="mt-4 rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[13px] text-muted-foreground">キャラ{i + 1}</span>
+                  <span className="text-sm text-muted-foreground">キャラ{i + 1}</span>
                   <Button
                     type="button"
                     variant="secondary"

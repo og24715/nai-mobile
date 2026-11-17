@@ -28,7 +28,7 @@ export function FormModal({ open, onRequestClose, children }: Props) {
       <DrawerContent className="bg-background [--drawer-content-max-height:92dvh] [--drawer-height:92dvh]">
         <div className="mx-auto min-h-0 w-full max-w-[640px] flex-1 overflow-y-auto px-5 pt-2 pb-16">
           <div className="flex items-center justify-between">
-            <DrawerTitle className="text-lg font-semibold">生成</DrawerTitle>
+            <DrawerTitle className="text-xl font-semibold">生成</DrawerTitle>
             <Button
               type="button"
               variant="secondary"
@@ -43,7 +43,7 @@ export function FormModal({ open, onRequestClose, children }: Props) {
           <div className="mt-8 flex items-center gap-3">
             <a
               href="setup"
-              className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] text-muted-foreground no-underline"
+              className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground no-underline"
             >
               ⚙ 設定
             </a>
