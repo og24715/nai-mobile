@@ -30,7 +30,7 @@ import {
   readNaiSettings,
   type RestoredForm,
 } from "@/lib/pngSettings";
-import { stripPngTextChunks } from "@/lib/pngStrip";
+import { flattenAlphaPng, stripPngTextChunks } from "@/lib/pngStrip";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
 
 export default function MainPage() {
@@ -293,11 +293,15 @@ export default function MainPage() {
   };
 
   // Download the hero image with its metadata stripped
-  // (improvement #62): the PNG's text chunks carry the full
-  // prompt / seed / settings, so they are filtered out
-  // client-side and the cleaned bytes download as
-  // <name>_clean.png. Non-PNG input (not expected for outputs/)
-  // falls back to downloading the original unchanged.
+  // (improvements #62 + #64): the PNG's text chunks carry the
+  // full prompt / seed / settings, and the same payload hides in
+  // the alpha channel's least significant bits. The image is
+  // therefore re-encoded through a canvas with its alpha forced
+  // fully opaque (which also drops every text chunk) and
+  // downloads as <name>_clean.png; if decode / export fails, the
+  // chunk-stripped bytes are used instead. Non-PNG input (not
+  // expected for outputs/) falls back to downloading the
+  // original unchanged.
   const downloadCleanHero = async () => {
     if (!heroUrl) return;
     let blob: Blob;
@@ -312,9 +316,14 @@ export default function MainPage() {
     const name = decodeURIComponent(heroUrl.split("/").pop() || "image.png");
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const cleaned = stripPngTextChunks(bytes);
-    const outBlob = cleaned
-      ? new Blob([cleaned], { type: "image/png" })
-      : blob;
+    // A non-null result means the input is a well-formed PNG.
+    // Prefer the canvas re-encode (#64), which also wipes the
+    // alpha-channel stealth payload; fall back to the
+    // chunk-stripped bytes when decode / export is unavailable.
+    const flattened = cleaned ? await flattenAlphaPng(blob) : null;
+    const outBlob =
+      flattened ??
+      (cleaned ? new Blob([cleaned], { type: "image/png" }) : blob);
     const outName = cleaned
       ? name.replace(/\.png$/i, "") + "_clean.png"
       : name;
