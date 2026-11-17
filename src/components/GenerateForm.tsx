@@ -17,6 +17,12 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import { cn } from "cn";
 import { MODELS, SAMPLERS, SIZES } from "@/lib/options";
 import { MAX_CHARS, type CharPrompt } from "@/hooks/useCharacters";
@@ -114,30 +120,34 @@ export function GenerateForm({ form }: { form: FormState }) {
         </AccordionTrigger>
         <AccordionContent>
           <div className={sectionContentCls}>
-            <div>
-              <Label htmlFor="prompt" className={labelCls}>
-                プロンプト
-              </Label>
-              <Textarea
-                id="prompt"
-                placeholder="1girl, ..."
-                className="min-h-[84px] text-base"
-                value={form.prompt}
-                onChange={(e) => form.setPrompt(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="negative" className={labelCls}>
-                ネガティブ (UC)
-              </Label>
-              <Textarea
-                id="negative"
-                className="min-h-[56px] text-base"
-                value={form.negative}
-                onChange={(e) => form.setNegative(e.target.value)}
-              />
-            </div>
+            {/* Positive / negative are tabs, like the official client:
+                the negative prompt is rarely edited, so it lives one
+                tap away instead of taking vertical space. Both fields
+                stay controlled from the lifted form state, so switching
+                tabs never loses either text. */}
+            <Tabs defaultValue="positive">
+              <TabsList className="h-10 w-full">
+                <TabsTrigger value="positive">ポジティブ</TabsTrigger>
+                <TabsTrigger value="negative">ネガティブ</TabsTrigger>
+              </TabsList>
+              <TabsContent value="positive">
+                <Textarea
+                  id="prompt"
+                  placeholder="1girl, ..."
+                  className="min-h-[84px] text-base"
+                  value={form.prompt}
+                  onChange={(e) => form.setPrompt(e.target.value)}
+                />
+              </TabsContent>
+              <TabsContent value="negative">
+                <Textarea
+                  id="negative"
+                  className="min-h-[56px] text-base"
+                  value={form.negative}
+                  onChange={(e) => form.setNegative(e.target.value)}
+                />
+              </TabsContent>
+            </Tabs>
           </div>
         </AccordionContent>
       </AccordionItem>
