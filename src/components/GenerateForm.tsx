@@ -218,7 +218,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 stay controlled from the lifted form state, so switching
                 tabs never loses either text. */}
             <Tabs defaultValue="positive">
-              <TabsList className="h-10 w-full">
+              <TabsList variant="line" className="h-10 w-full">
                 <TabsTrigger value="positive">Positive</TabsTrigger>
                 <TabsTrigger value="negative">Negative</TabsTrigger>
               </TabsList>
@@ -514,7 +514,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                     switching tabs never loses either text. The
                     selected tab is not persisted. */}
                 <Tabs defaultValue="positive" className="mt-2">
-                  <TabsList className="h-9 w-full">
+                  <TabsList variant="line" className="h-9 w-full">
                     <TabsTrigger value="positive">Positive</TabsTrigger>
                     <TabsTrigger value="negative">Negative</TabsTrigger>
                   </TabsList>
