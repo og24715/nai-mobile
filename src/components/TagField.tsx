@@ -14,6 +14,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Combobox,
+  ComboboxContent,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
+import { Combobox as ComboboxPrimitive } from "@base-ui/react";
+import {
   deleteChip,
   fmtWeight,
   listChips,
@@ -146,7 +153,7 @@ function ChipEditorContent({
 
 // A prompt field edited ONLY through its tag chips (improvements #21,
 // #28): the chips plus an inline "add tag" input with the
-// suggestion strip (#22) are the whole editing UI — there is no
+// suggestion combobox (#22, #54) are the whole editing UI — there is no
 // free-text textarea anymore. Weight stepping lives ON the chips
 // themselves (#34): each non-raw chip is a [−][label][+] button
 // group. Tapping a chip's label opens its editor Popover (#50) with
@@ -179,6 +186,10 @@ export function TagField({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const queryRef = useRef("");
+  // The suggestion the Combobox currently has highlighted via
+  // keyboard navigation (improvement #54): Enter selects it when
+  // one is set, and commits the typed text when none is.
+  const highlightedRef = useRef<TagSuggestion | null>(null);
 
   const runQuery = (q: string) => {
     if (!suggest) return;
@@ -244,31 +255,20 @@ export function TagField({
     setAddText("");
     setSuggestions([]);
     queryRef.current = "";
-    // Keep focus in the add input for consecutive additions.
-    requestAnimationFrame(() => addRef.current?.focus());
+    highlightedRef.current = null;
+    // Keep focus in the add input for consecutive additions. The
+    // clear is repeated in the frame as a guard: if the Combobox
+    // echoes the picked label back through onInputValueChange as
+    // part of its selection handling, the input still ends empty
+    // (and the stale-response guard in runQuery drops the fetch
+    // that echo may have scheduled, since queryRef is reset).
+    requestAnimationFrame(() => {
+      setAddText("");
+      setSuggestions([]);
+      queryRef.current = "";
+      addRef.current?.focus();
+    });
   };
-
-  const strip = suggestions.length > 0 && (
-    <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-      {suggestions.map((s) => (
-        <button
-          key={s.name}
-          type="button"
-          onClick={() => applySuggestion(s)}
-          className="inline-flex min-h-tap shrink-0 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 text-suggest whitespace-nowrap"
-        >
-          <span>{s.name}</span>
-          {s.mine > 0 ? (
-            <span className="text-xs font-medium text-primary">Frequently Used</span>
-          ) : s.count !== null ? (
-            <span className="text-tag-badge text-muted-foreground">
-              {fmtCount(s.count)}
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
-  );
 
   // --- On-chip weight stepping (improvement #34) -----------------------
   // The −/+ zones of a chip step its weight directly through
@@ -463,74 +463,133 @@ export function TagField({
             </Popover>
           );
         })}
-        {/* Clear button (improvement #49): the same InputGroup
-            construction as the seed field (#48) — an inline x that
-            exists only while text is typed. Clearing mirrors the
-            Escape key and focus stays in the input for the next
-            tag. The group is restyled back into the dashed pill
-            the raw input used to be. */}
-        <InputGroup className="h-tap min-w-32 flex-1 rounded-full border-dashed bg-transparent dark:bg-transparent has-[[data-slot=input-group-control]:focus-visible]:border-primary has-[[data-slot=input-group-control]:focus-visible]:ring-0">
-          <InputGroupInput
-            ref={addRef}
-            type="text"
-            value={addText}
-            aria-label="Add tag"
-            placeholder="Add tag"
-            enterKeyHint="done"
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            onChange={(e) => {
-              setAddText(e.target.value);
-              scheduleAddSuggest(e.target.value);
-            }}
-            onFocus={() => {
-              if (addText) scheduleAddSuggest(addText);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === ",") {
-                // Comma commits too, so several tags can be typed in a
-                // row without reaching for the suggestion strip.
-                e.preventDefault();
-                commitAdd();
-              } else if (e.key === "Escape") {
-                setAddText("");
-                setSuggestions([]);
-                queryRef.current = "";
+        {/* Add-tag combobox (improvement #54): shadcn's Combobox
+            (Base UI) renders the suggestions; the data layer is
+            unchanged — the debounced /api/tags relay fills
+            `suggestions` and the server's ordering is
+            authoritative, so the Combobox's own filtering is
+            disabled (filter={null}) and the list shows exactly
+            what the fetch returned. Selecting an item applies it
+            as a tag; Enter / comma with nothing highlighted
+            commits the typed text instead. The input itself is
+            the same InputGroup dashed pill as before, composed
+            through the Combobox's Input part, so the #49 clear
+            button keeps its place in the inline-end addon. */}
+        <Combobox
+          items={suggestions}
+          filter={null}
+          autoHighlight={false}
+          itemToStringLabel={(s: TagSuggestion | null) => s?.name ?? ""}
+          itemToStringValue={(s: TagSuggestion | null) => s?.name ?? ""}
+          value={null}
+          inputValue={addText}
+          open={suggestions.length > 0}
+          onOpenChange={(nextOpen, details) => {
+            if (nextOpen) return;
+            // The popup asked to close (outside press, focus out,
+            // Escape): mirror the old strip's hide by dropping the
+            // suggestions. Escape also clears the typed text.
+            setSuggestions([]);
+            if (details.reason === "escape-key") {
+              setAddText("");
+              queryRef.current = "";
+            }
+          }}
+          onInputValueChange={(v, details) => {
+            // Input changes caused by picking an item (the
+            // Combobox writing the picked label into the input)
+            // are handled by onValueChange, not as typing.
+            if (details.reason === "item-press") return;
+            setAddText(v);
+            scheduleAddSuggest(v);
+          }}
+          onValueChange={(s) => {
+            if (s) applySuggestion(s);
+          }}
+          onItemHighlighted={(s) => {
+            highlightedRef.current = s ?? null;
+          }}
+        >
+          <InputGroup className="h-tap min-w-32 flex-1 rounded-full border-dashed bg-transparent dark:bg-transparent has-[[data-slot=input-group-control]:focus-visible]:border-primary has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+            <ComboboxPrimitive.Input
+              render={
+                <InputGroupInput
+                  ref={addRef}
+                  type="text"
+                  aria-label="Add tag"
+                  placeholder="Add tag"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onFocus={() => {
+                    if (addText) scheduleAddSuggest(addText);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      // With a suggestion highlighted (arrow-key
+                      // navigation), Enter belongs to the Combobox
+                      // and selects it. Otherwise the typed text is
+                      // committed as a tag — comma commits too, so
+                      // several tags can be typed in a row.
+                      if (e.key === "Enter" && highlightedRef.current) {
+                        return;
+                      }
+                      e.preventDefault();
+                      commitAdd();
+                    } else if (e.key === "Escape") {
+                      setAddText("");
+                      setSuggestions([]);
+                      queryRef.current = "";
+                    }
+                  }}
+                  className="px-3.5 text-tag md:text-tag"
+                />
               }
-            }}
-            onBlur={() => {
-              // Hide on blur, but only after ~200ms: a tap on a
-              // suggestion blurs the input first, and the strip must
-              // stay mounted long enough for that tap's click to land
-              // (a scroll gesture never produces a click, so this
-              // delay cannot cause accidental selections).
-              setTimeout(() => setSuggestions([]), 200);
-            }}
-            className="px-3.5 text-tag md:text-tag"
-          />
-          {addText !== "" && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-sm"
-                aria-label="Clear tag input"
-                onClick={() => {
-                  setAddText("");
-                  setSuggestions([]);
-                  queryRef.current = "";
-                  // Keep focus in the add input for the next tag.
-                  requestAnimationFrame(() => addRef.current?.focus());
-                }}
-              >
-                <X className="size-4" />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
+            />
+            {addText !== "" && (
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-sm"
+                  aria-label="Clear tag input"
+                  onClick={() => {
+                    setAddText("");
+                    setSuggestions([]);
+                    queryRef.current = "";
+                    // Keep focus in the add input for the next tag.
+                    requestAnimationFrame(() => addRef.current?.focus());
+                  }}
+                >
+                  <X className="size-4" />
+                </InputGroupButton>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+          <ComboboxContent>
+            <ComboboxList>
+              {suggestions.map((s) => (
+                <ComboboxItem
+                  key={s.name}
+                  value={s}
+                  className="min-h-tap px-3.5 text-suggest"
+                >
+                  <span>{s.name}</span>
+                  {s.mine > 0 ? (
+                    <span className="ml-auto text-xs font-medium text-primary">
+                      Frequently Used
+                    </span>
+                  ) : s.count !== null ? (
+                    <span className="ml-auto text-tag-badge text-muted-foreground">
+                      {fmtCount(s.count)}
+                    </span>
+                  ) : null}
+                </ComboboxItem>
+              ))}
+            </ComboboxList>
+          </ComboboxContent>
+        </Combobox>
       </div>
-
-      {strip}
     </div>
   );
 }
