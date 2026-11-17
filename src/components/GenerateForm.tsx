@@ -6,7 +6,12 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -445,14 +450,30 @@ export function GenerateForm({ form }: { form: FormState }) {
               <Label htmlFor="seed" className={labelCls}>
                 Seed (blank = random)
               </Label>
-              <Input
-                id="seed"
-                type="number"
-                placeholder="random"
-                className="h-11 text-base"
-                value={form.seed}
-                onChange={(e) => form.setSeed(e.target.value)}
-              />
+              {/* Clear button (improvement #48): the x lives
+                  inline at the end of the field via InputGroup and
+                  only exists while a seed is typed; clearing back
+                  to blank means NovelAI picks the seed (#24). */}
+              <InputGroup className="h-11">
+                <InputGroupInput
+                  id="seed"
+                  type="number"
+                  placeholder="random"
+                  value={form.seed}
+                  onChange={(e) => form.setSeed(e.target.value)}
+                />
+                {form.seed !== "" && (
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      size="icon-sm"
+                      aria-label="Clear seed"
+                      onClick={() => form.setSeed("")}
+                    >
+                      <X className="size-4" />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                )}
+              </InputGroup>
             </div>
 
             {/* img2img base image (improvement #43): a device file
