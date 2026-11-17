@@ -1,9 +1,9 @@
 [Unit]
-Description=NovelAI mobile front (TypeScript)
+Description=NovelAI mobile front (React + TypeScript)
 After=network.target
 
 [Service]
-ExecStart=%h/.local/bin/node %h/workspace/nai-mobile/dist/server.js
+ExecStart=%h/.local/bin/node %h/workspace/nai-mobile/dist-server/server.js
 WorkingDirectory=%h/workspace/nai-mobile
 Restart=on-failure
 RestartSec=3
