@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AllowanceBar } from "@/components/AllowanceBar";
 import { FabRow } from "@/components/FabRow";
 import { FormModal } from "@/components/FormModal";
 import { GenerateForm, type FormState } from "@/components/GenerateForm";
@@ -47,7 +48,7 @@ export default function MainPage() {
     }
   }, []);
 
-  // Allowance for the thin bar under the status line. Any failure
+  // Allowance for the thin bar at the very top of the screen. Any failure
   // (or a non-Opus account without a usage allowance) leaves it
   // null and the bar simply isn't rendered.
   const refreshSubscription = useCallback(async () => {
@@ -175,7 +176,8 @@ export default function MainPage() {
 
   return (
     <>
-      <Viewer heroUrl={heroUrl} status={status} usage={usage} items={items} onSelect={selectThumb} />
+      {usage && <AllowanceBar usage={usage} />}
+      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />

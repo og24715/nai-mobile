@@ -3,7 +3,8 @@ import { ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
 import { cn } from "cn";
 import type { SubscriptionUsage } from "@/lib/api";
 
-// Thin bar under the status line showing how much of the Opus V5
+// Thin bar at the very top of the main screen, above the hero
+// image, showing how much of the Opus V5
 // free allowance remains. Color is the only signal — no numbers,
 // no percent text, no Anlas figure anywhere (the user asked for
 // exactly that):
@@ -20,7 +21,7 @@ export function AllowanceBar({ usage }: { usage: SubscriptionUsage }) {
         ? "low"
         : "normal";
   return (
-    <ProgressPrimitive.Root value={width} className="my-2 w-full">
+    <ProgressPrimitive.Root value={width} className="w-full">
       <ProgressTrack>
         <ProgressIndicator
           className={cn(

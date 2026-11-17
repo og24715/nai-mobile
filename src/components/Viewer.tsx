@@ -1,5 +1,4 @@
-import { AllowanceBar } from "@/components/AllowanceBar";
-import type { RecentItem, SubscriptionUsage } from "@/lib/api";
+import type { RecentItem } from "@/lib/api";
 import { cn } from "cn";
 
 export interface StatusState {
@@ -10,7 +9,6 @@ export interface StatusState {
 interface Props {
   heroUrl: string;
   status: StatusState;
-  usage: SubscriptionUsage | null;
   items: RecentItem[];
   onSelect: (url: string) => void;
 }
@@ -18,7 +16,7 @@ interface Props {
 // Main screen: full-bleed hero image on top, status line, and the
 // recent-generations thumbnail grid. Tapping a thumbnail swaps the
 // hero; tapping the hero opens the original in a new tab.
-export function Viewer({ heroUrl, status, usage, items, onSelect }: Props) {
+export function Viewer({ heroUrl, status, items, onSelect }: Props) {
   return (
     <>
       {heroUrl && (
@@ -38,7 +36,6 @@ export function Viewer({ heroUrl, status, usage, items, onSelect }: Props) {
         >
           {status.text}
         </div>
-        {usage && <AllowanceBar usage={usage} />}
         <section className="mb-14">
           <h2 className="mb-3 text-lg font-semibold">最近の生成</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
