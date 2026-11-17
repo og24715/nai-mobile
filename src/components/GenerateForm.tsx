@@ -44,6 +44,10 @@ import { modelCaps } from "@/lib/capabilities";
 import { MAX_CHARS, type CharPrompt } from "@/hooks/useCharacters";
 
 export interface FormState {
+  // Restore settings from a device image (improvements #23 +
+  // #31): the entry button lives at the top of this form since
+  // #47; MainPage owns the parse + selection-dialog flow.
+  onRestoreFile: (f: File) => void;
   prompt: string;
   negative: string;
   model: string;
@@ -266,6 +270,24 @@ export function GenerateForm({ form }: { form: FormState }) {
 
   return (
     <div className={chipEditor ? "pb-36" : undefined}>
+    {/* Restore from a device image (#23 + #31; the entry point
+        moved from under the hero into the form in #47): picking
+        a file parses its embedded NovelAI settings locally and
+        opens the group-selection dialog; applying leaves this
+        drawer open with the restored values in place. */}
+    <label className="mb-4 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-background text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground">
+      Restore from Image
+      <input
+        type="file"
+        accept="image/png,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) form.onRestoreFile(f);
+        }}
+      />
+    </label>
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
         <AccordionTrigger className="py-3.5 text-xl font-semibold">

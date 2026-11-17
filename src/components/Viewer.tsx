@@ -17,7 +17,6 @@ interface Props {
   status: StatusState;
   items: RecentItem[];
   onSelect: (url: string) => void;
-  onRestoreFile: (f: File) => void;
   onRestoreHero: () => void;
   onUpscale: () => void;
   upscaling: boolean;
@@ -33,7 +32,7 @@ interface Props {
 // with upscale / enhance / restore-from-this-image / open-original
 // actions (improvements #39 + #42); the upscale and enhance items
 // open parameter dialogs first (improvements #41 + #42).
-export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad }: Props) {
+export function Viewer({ heroUrl, status, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad }: Props) {
   return (
     <>
       {heroUrl && (
@@ -81,35 +80,6 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
           )}
         >
           {status.text}
-        </div>
-        {/* Two ways to restore the form settings from a NovelAI PNG:
-            from a file saved on this device (improvement #23), or from
-            the history image currently shown as the hero (improvement
-            #10). Both run through the same local parse + selection
-            dialog; nothing is uploaded. */}
-        <div className="mt-1 flex flex-wrap items-center gap-1">
-          <label className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-            Restore from Image
-            <input
-              type="file"
-              accept="image/png,image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) onRestoreFile(f);
-              }}
-            />
-          </label>
-          {heroUrl && (
-            <button
-              type="button"
-              onClick={onRestoreHero}
-              className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            >
-              Restore from This Image
-            </button>
-          )}
         </div>
         <section className="mb-14">
           <h2 className="mb-3 text-xl font-semibold">Recent</h2>
