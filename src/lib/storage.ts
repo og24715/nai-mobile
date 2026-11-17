@@ -3,9 +3,11 @@
 // The keys are part of the app's contract with the user's phone and must
 // not change: "nai.token" holds the NovelAI token (browser only, the
 // server never sees it except as a per-request Authorization header),
-// "nai.<field>" holds each form field, "nai.chars" the character list.
+// "nai.<field>" holds each form field, "nai.chars" the character list,
+// "nai.theme" the color theme ("dark" | "light", default dark).
 export const TOKEN_KEY = "nai.token";
 export const CHARS_KEY = "nai.chars";
+export const THEME_KEY = "nai.theme";
 
 export const fieldKey = (name: string) => "nai." + name;
 

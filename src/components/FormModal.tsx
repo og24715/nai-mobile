@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface Props {
   open: boolean;
@@ -40,14 +41,15 @@ export function FormModal({ open, onRequestClose, children }: Props) {
             </Button>
           </div>
           <div className="mt-6">{children}</div>
-          <p className="mt-8">
+          <div className="mt-8 flex items-center gap-3">
             <a
               href="setup"
               className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] text-muted-foreground no-underline"
             >
               ⚙ 設定
             </a>
-          </p>
+            <ThemeToggle />
+          </div>
         </div>
       </DialogContent>
     </Dialog>

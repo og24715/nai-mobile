@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { TOKEN_KEY, readStored, removeStored, writeStored } from "@/lib/storage";
 
 const hintCls = "text-xs text-muted-foreground";
@@ -85,14 +86,15 @@ export default function SetupPage() {
           <p className={`${hintCls} mt-2`}>
             取得: novelai.net → Account Settings → Get Persistent API Token。チャットには送らないでください。
           </p>
-          <p className="mt-6">
+          <div className="mt-6 flex items-center gap-3">
             <a
               href="./"
               className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-[13px] text-muted-foreground no-underline"
             >
               ← 生成画面へ戻る
             </a>
-          </p>
+            <ThemeToggle />
+          </div>
         </div>
       </section>
     </main>

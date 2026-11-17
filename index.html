@@ -1,7 +1,21 @@
 <!doctype html>
-<html lang="ja" class="dark">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Apply the saved theme before first paint (default: dark) so the
+      // page never flashes the wrong theme. The toggle in the app keeps
+      // "nai.theme" ("dark" | "light") up to date.
+      try {
+        var t = localStorage.getItem("nai.theme");
+        if (t !== "light") t = "dark";
+        document.documentElement.classList.toggle("dark", t === "dark");
+        document.documentElement.style.colorScheme = t;
+      } catch (e) {
+        document.documentElement.classList.add("dark");
+        document.documentElement.style.colorScheme = "dark";
+      }
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>nai-mobile</title>
   </head>
