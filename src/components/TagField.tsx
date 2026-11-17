@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus, X } from "lucide-react";
 import { cn } from "cn";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   deleteChip,
   fmtWeight,
@@ -364,46 +370,71 @@ export function TagField({
             </div>
           );
         })}
-        <input
-          ref={addRef}
-          type="text"
-          value={addText}
-          aria-label="Add tag"
-          placeholder="Add tag"
-          enterKeyHint="done"
-          autoComplete="off"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onChange={(e) => {
-            setAddText(e.target.value);
-            scheduleAddSuggest(e.target.value);
-          }}
-          onFocus={() => {
-            if (addText) scheduleAddSuggest(addText);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === ",") {
-              // Comma commits too, so several tags can be typed in a
-              // row without reaching for the suggestion strip.
-              e.preventDefault();
-              commitAdd();
-            } else if (e.key === "Escape") {
-              setAddText("");
-              setSuggestions([]);
-              queryRef.current = "";
-            }
-          }}
-          onBlur={() => {
-            // Hide on blur, but only after ~200ms: a tap on a
-            // suggestion blurs the input first, and the strip must
-            // stay mounted long enough for that tap's click to land
-            // (a scroll gesture never produces a click, so this
-            // delay cannot cause accidental selections).
-            setTimeout(() => setSuggestions([]), 200);
-          }}
-          className="h-tap min-w-32 flex-1 rounded-full border border-dashed border-input bg-transparent px-3.5 text-tag outline-none placeholder:text-muted-foreground focus:border-primary"
-        />
+        {/* Clear button (improvement #49): the same InputGroup
+            construction as the seed field (#48) — an inline x that
+            exists only while text is typed. Clearing mirrors the
+            Escape key and focus stays in the input for the next
+            tag. The group is restyled back into the dashed pill
+            the raw input used to be. */}
+        <InputGroup className="h-tap min-w-32 flex-1 rounded-full border-dashed bg-transparent dark:bg-transparent has-[[data-slot=input-group-control]:focus-visible]:border-primary has-[[data-slot=input-group-control]:focus-visible]:ring-0">
+          <InputGroupInput
+            ref={addRef}
+            type="text"
+            value={addText}
+            aria-label="Add tag"
+            placeholder="Add tag"
+            enterKeyHint="done"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => {
+              setAddText(e.target.value);
+              scheduleAddSuggest(e.target.value);
+            }}
+            onFocus={() => {
+              if (addText) scheduleAddSuggest(addText);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === ",") {
+                // Comma commits too, so several tags can be typed in a
+                // row without reaching for the suggestion strip.
+                e.preventDefault();
+                commitAdd();
+              } else if (e.key === "Escape") {
+                setAddText("");
+                setSuggestions([]);
+                queryRef.current = "";
+              }
+            }}
+            onBlur={() => {
+              // Hide on blur, but only after ~200ms: a tap on a
+              // suggestion blurs the input first, and the strip must
+              // stay mounted long enough for that tap's click to land
+              // (a scroll gesture never produces a click, so this
+              // delay cannot cause accidental selections).
+              setTimeout(() => setSuggestions([]), 200);
+            }}
+            className="px-3.5 text-tag md:text-tag"
+          />
+          {addText !== "" && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-sm"
+                aria-label="Clear tag input"
+                onClick={() => {
+                  setAddText("");
+                  setSuggestions([]);
+                  queryRef.current = "";
+                  // Keep focus in the add input for the next tag.
+                  requestAnimationFrame(() => addRef.current?.focus());
+                }}
+              >
+                <X className="size-4" />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
       </div>
 
       {strip}
