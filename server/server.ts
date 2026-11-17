@@ -605,6 +605,151 @@ const server = http.createServer(async (req, res) => {
       // Same item shape as /api/recent entries.
       sendJson(res, 200, { ok: true, item: { name: out, url: "outputs/" + encodeURIComponent(out) } }); return;
     }
+    if (req.method === "POST" && p === "api/enhance") {
+      // Enhance (improvement #42): the official client's Enhance
+      // Image is not a separate endpoint — it is generate-image
+      // with action "img2img", driven by the SOURCE image's own
+      // stored generation parameters (read from its PNG Comment),
+      // not by the client's current form. Same per-request token
+      // relay as generate/upscale; nothing is stored server-side.
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; scale?: unknown; strength?: unknown; noise?: unknown };
+      const name = typeof body.name === "string" ? body.name : "";
+      // Same outputs/ exact-match validation as the upscale route.
+      const listed = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"));
+      if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "対象の画像が見つかりません" }); return; }
+      const scaleSel = body.scale;
+      if (!(scaleSel === 2 || scaleSel === 1.5 || scaleSel === 1 || scaleSel === "max")) { sendJson(res, 400, { ok: false, error: "倍率の値が不正です" }); return; }
+      const strength = Number(body.strength);
+      const noise = Number(body.noise);
+      if (!Number.isFinite(strength) || strength < 0 || strength > 1 || !Number.isFinite(noise) || noise < 0 || noise > 1) { sendJson(res, 400, { ok: false, error: "Strength / Noise の値が不正です" }); return; }
+      const png = fs.readFileSync(path.join(OUTPUTS, name));
+      // The payload is built from the image's own Comment metadata
+      // (it embeds the full generation parameters). No Comment =
+      // nothing to rebuild the generation from.
+      let meta: Record<string, unknown> = {};
+      const commentRaw = extractPngText(png)?.get("Comment");
+      if (commentRaw) { try { meta = JSON.parse(commentRaw) as Record<string, unknown>; } catch { meta = {}; } }
+      const srcPrompt = typeof meta.prompt === "string" ? meta.prompt : "";
+      if (!srcPrompt) { sendJson(res, 400, { ok: false, error: "この画像に設定が入っていません" }); return; }
+      // Model: mapped from the metadata's display name (Full
+      // variants; the metadata carries no Full/Curated split).
+      // Unmappable names fall back to V4.5 Full.
+      const displayName = typeof meta.model_name === "string" ? meta.model_name : "";
+      const model = displayName.includes("V5") ? "nai-diffusion-5-full"
+        : displayName.includes("V4.5") ? "nai-diffusion-4-5-full"
+        : displayName.includes("V4") ? "nai-diffusion-4-full"
+        : displayName.includes("V3") ? "nai-diffusion-3"
+        : "nai-diffusion-4-5-full";
+      const isV5 = model.startsWith("nai-diffusion-5");
+      if (scaleSel === "max" && !isV5) { sendJson(res, 400, { ok: false, error: "MAXはV5モデルで生成した画像専用です" }); return; }
+      // Target size. Source dims come from the PNG IHDR (the
+      // actual pixels); scaled dims are rounded to multiples of
+      // 64 and capped at 3,145,728 px total, per the official
+      // client's rule. "max" sends the source's own 64-rounded
+      // dims with upscaled_enhance and lets NovelAI produce 2x
+      // (aspect-fitted to the same cap).
+      const srcW = png.length >= 24 ? png.readUInt32BE(16) : 0;
+      const srcH = png.length >= 24 ? png.readUInt32BE(20) : 0;
+      if (!srcW || !srcH) { sendJson(res, 400, { ok: false, error: "画像サイズが取得できませんでした" }); return; }
+      const round64 = (n: number) => Math.max(64, Math.round(n / 64) * 64);
+      const PX_CAP = 3_145_728;
+      let width: number; let height: number; let upscaledEnhance = false;
+      if (scaleSel === "max") {
+        width = round64(srcW); height = round64(srcH); upscaledEnhance = true;
+      } else {
+        width = round64(srcW * scaleSel); height = round64(srcH * scaleSel);
+        if (width * height > PX_CAP) { sendJson(res, 400, { ok: false, error: "拡大後のサイズが上限を超えています" }); return; }
+      }
+      const num = (v: unknown, dflt: number) => (typeof v === "number" && Number.isFinite(v) ? v : dflt);
+      const parameters: Record<string, unknown> = {
+        params_version: paramsVersion(model),
+        width, height,
+        scale: num(meta.scale, 5),
+        sampler: typeof meta.sampler === "string" ? meta.sampler : "k_euler_ancestral",
+        steps: num(meta.steps, 28),
+        n_samples: 1,
+        uc: typeof meta.uc === "string" ? meta.uc : "",
+        // img2img core: the source image itself plus the dialog's
+        // strength / noise. The seed is omitted (NovelAI chooses;
+        // a 400 is retried once with a random seed, mirroring the
+        // generate route) and the original seed is reused as the
+        // extra noise seed.
+        image: png.toString("base64"),
+        strength, noise,
+        extra_noise_seed: typeof meta.seed === "number" && Number.isFinite(meta.seed) ? meta.seed : Math.floor(Math.random() * 4294967295),
+        ...(upscaledEnhance ? { upscaled_enhance: true } : {}),
+      };
+      // Stored generation parameters carried over when present.
+      if (typeof meta.noise_schedule === "string") parameters.noise_schedule = meta.noise_schedule;
+      if (typeof meta.cfg_rescale === "number") parameters.cfg_rescale = meta.cfg_rescale;
+      if (typeof meta.uncond_scale === "number") parameters.uncond_scale = meta.uncond_scale;
+      if (typeof meta.sm === "boolean") parameters.sm = meta.sm;
+      if (typeof meta.sm_dyn === "boolean") parameters.sm_dyn = meta.sm_dyn;
+      if (typeof meta.dynamic_thresholding === "boolean") parameters.dynamic_thresholding = meta.dynamic_thresholding;
+      if (typeof meta.skip_cfg_above_sigma === "number") parameters.skip_cfg_above_sigma = meta.skip_cfg_above_sigma;
+      if (V4_MODELS.has(model)) {
+        // V4+ requests must keep the v4 prompt structures or the
+        // API returns 500 — pass the stored ones through verbatim
+        // (they carry the character captions and centers).
+        parameters.v4_prompt = (meta.v4_prompt && typeof meta.v4_prompt === "object")
+          ? meta.v4_prompt
+          : { caption: { base_caption: srcPrompt, char_captions: [] }, use_coords: false, use_order: true };
+        parameters.v4_negative_prompt = (meta.v4_negative_prompt && typeof meta.v4_negative_prompt === "object")
+          ? meta.v4_negative_prompt
+          : { caption: { base_caption: parameters.uc, char_captions: [] }, legacy_uc: false };
+      } else {
+        parameters.sm = false; parameters.sm_dyn = false;
+        parameters.dynamic_thresholding = false;
+      }
+      const payload: { input: string; model: string; action: string; parameters: Record<string, unknown> } =
+        { input: srcPrompt, model, action: "img2img", parameters };
+      const callNAI = async (): Promise<Response> => {
+        const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
+        try {
+          return await fetch(API_URL, { method: "POST", signal: ctrl.signal,
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": UA },
+            body: JSON.stringify(payload) });
+        } finally { clearTimeout(timer); }
+      };
+      let resp: Response;
+      try {
+        resp = await callNAI();
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: String((e as Error)?.message || e) }); return;
+      }
+      // Seed omitted: retry once with a random seed on a 400 (a
+      // 400 means the request was rejected, so nothing was
+      // generated or charged) — same policy as the generate route.
+      if (!resp.ok && resp.status === 400) {
+        (payload.parameters as Record<string, unknown>).seed = Math.floor(Math.random() * 4294967295);
+        try {
+          const retry = await callNAI();
+          if (retry.ok) { resp = retry; }
+          else { await retry.text().catch(() => undefined); }
+        } catch { /* fall through to the original error handling */ }
+      }
+      if (!resp.ok) {
+        const text = (await resp.text()).slice(0, 500);
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
+      }
+      const zip = new Uint8Array(await resp.arrayBuffer());
+      const files = unzipSync(zip);
+      let outPng: Buffer | null = null;
+      for (const [fname, data] of Object.entries(files)) {
+        if (fname.toLowerCase().endsWith(".png")) { outPng = Buffer.from(data); break; }
+      }
+      if (!outPng) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
+      const base = name.replace(/\.png$/i, "");
+      let out = `${base}_enh.png`;
+      for (let n = 2; fs.existsSync(path.join(OUTPUTS, out)); n++) out = `${base}_enh${n}.png`;
+      fs.writeFileSync(path.join(OUTPUTS, out), outPng);
+      // Same item shape as /api/recent entries.
+      sendJson(res, 200, { ok: true, item: { name: out, url: "outputs/" + encodeURIComponent(out) } }); return;
+    }
     if (req.method === "POST" && p === "api/generate") {
       // Token arrives per-request from the browser (localStorage) and is
       // used only in memory for this one upstream call. Never persisted.

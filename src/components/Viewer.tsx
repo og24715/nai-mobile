@@ -21,16 +21,19 @@ interface Props {
   onRestoreHero: () => void;
   onUpscale: () => void;
   upscaling: boolean;
+  onEnhance: () => void;
+  enhancing: boolean;
+  onHeroLoad: (w: number, h: number) => void;
 }
 
 // Main screen: full-bleed hero image on top, status line, and the
 // recent-generations thumbnail grid. Tapping a thumbnail swaps the
 // hero; tapping the hero opens the original in a new tab. Long-
 // pressing the hero (right-click on desktop) opens a context menu
-// with upscale / restore-from-this-image / open-original actions
-// (improvement #39); the upscale item opens a parameter dialog
-// first (improvement #41).
-export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero, onUpscale, upscaling }: Props) {
+// with upscale / enhance / restore-from-this-image / open-original
+// actions (improvements #39 + #42); the upscale and enhance items
+// open parameter dialogs first (improvements #41 + #42).
+export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad }: Props) {
   return (
     <>
       {heroUrl && (
@@ -41,6 +44,12 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
                 src={heroUrl}
                 alt=""
                 draggable={false}
+                onLoad={(e) =>
+                  onHeroLoad(
+                    e.currentTarget.naturalWidth,
+                    e.currentTarget.naturalHeight,
+                  )
+                }
                 className="block h-auto w-full [-webkit-touch-callout:none]"
               />
             </a>
@@ -48,6 +57,9 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
           <ContextMenuContent>
             <ContextMenuItem disabled={upscaling} onClick={onUpscale}>
               アップスケール
+            </ContextMenuItem>
+            <ContextMenuItem disabled={enhancing} onClick={onEnhance}>
+              エンハンス
             </ContextMenuItem>
             <ContextMenuItem onClick={onRestoreHero}>
               この画像から復元

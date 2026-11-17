@@ -5,12 +5,14 @@ import { FormModal } from "@/components/FormModal";
 import { GenerateForm, type FormState } from "@/components/GenerateForm";
 import { RestoreDialog, type RestoreSelection } from "@/components/RestoreDialog";
 import { UpscaleDialog } from "@/components/UpscaleDialog";
+import { EnhanceDialog, type EnhanceScale } from "@/components/EnhanceDialog";
 import { Viewer, type StatusState } from "@/components/Viewer";
 import { useCharacters } from "@/hooks/useCharacters";
 import { usePersistedField } from "@/hooks/usePersistedField";
 import {
   fetchRecent,
   fetchSubscription,
+  requestEnhance,
   requestGenerate,
   requestUpscale,
   type GenerateRequest,
@@ -50,6 +52,13 @@ export default function MainPage() {
   // Upscale parameter dialog (improvement #41): opened from the
   // hero context menu; the run itself happens on execute.
   const [upscaleOpen, setUpscaleOpen] = useState(false);
+  // Enhance parameter dialog + run state (improvement #42), and
+  // the hero image's natural size (reported by the <img> onLoad),
+  // which the dialog's scale chips are computed from. Keyed by
+  // URL so a stale size is never used for a different hero.
+  const [enhanceOpen, setEnhanceOpen] = useState(false);
+  const [enhancing, setEnhancing] = useState(false);
+  const [heroSize, setHeroSize] = useState<{ url: string; w: number; h: number } | null>(null);
   // True while a history entry pushed by openModal is on the stack.
   const modalHist = useRef(false);
 
@@ -215,6 +224,40 @@ export default function MainPage() {
     setUpscaling(false);
   };
 
+  // Enhance the hero image (improvement #42): the context menu
+  // item opens the parameter dialog (scale + strength + noise);
+  // on execute the server rebuilds an img2img generation from
+  // the hero's own stored parameters and saves the result as a
+  // new outputs/ entry, which then becomes the hero. Mirrors the
+  // upscale flow, including the allowance refresh (Anlas is
+  // consumed).
+  const enhanceHero = async (enhScale: EnhanceScale, strength: number, noise: number) => {
+    if (!heroUrl || enhancing) return;
+    const token = readStored(TOKEN_KEY);
+    if (!token) {
+      location.replace("setup");
+      return;
+    }
+    const name = decodeURIComponent(heroUrl.split("/").pop() || "");
+    if (!name) return;
+    setEnhancing(true);
+    setStatus({ kind: "", text: "エンハンス中…" });
+    try {
+      const { status: httpStatus, json: j } = await requestEnhance(token, name, enhScale, strength, noise);
+      if (!j.ok) {
+        setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
+      } else {
+        setStatus({ kind: "ok", text: "エンハンスしました" });
+        if (j.item) setHeroUrl(j.item.url);
+        void refreshRecent();
+        void refreshSubscription();
+      }
+    } catch (e) {
+      setStatus({ kind: "err", text: "通信エラー: " + e });
+    }
+    setEnhancing(false);
+  };
+
   const generate = async () => {
     const token = readStored(TOKEN_KEY);
     if (!token) {
@@ -282,7 +325,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} />
+      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
@@ -299,6 +342,17 @@ export default function MainPage() {
         onExecute={(upModel, blurSigma) => {
           setUpscaleOpen(false);
           void upscaleHero(upModel, blurSigma);
+        }}
+      />
+      <EnhanceDialog
+        open={enhanceOpen}
+        sourceWidth={heroSize && heroSize.url === heroUrl ? heroSize.w : 0}
+        sourceHeight={heroSize && heroSize.url === heroUrl ? heroSize.h : 0}
+        formModel={model}
+        onCancel={() => setEnhanceOpen(false)}
+        onExecute={(enhScale, strength, noise) => {
+          setEnhanceOpen(false);
+          void enhanceHero(enhScale, strength, noise);
         }}
       />
     </>

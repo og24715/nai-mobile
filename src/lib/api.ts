@@ -198,3 +198,33 @@ export async function requestUpscale(
   });
   return { status: r.status, json: (await r.json()) as UpscaleResponse };
 }
+
+export interface EnhanceResponse {
+  ok: boolean;
+  // The saved enhanced image, in the same shape as /api/recent
+  // items, so the client can select it as the hero directly.
+  item?: RecentItem;
+  error?: string;
+}
+
+// Enhance one outputs/ image (improvement #42): the server
+// rebuilds an img2img request from the image's own stored
+// generation parameters; the client only picks the output scale
+// (2 / 1.5 / 1 / "max") and the strength / noise.
+export async function requestEnhance(
+  token: string,
+  name: string,
+  scale: number | "max",
+  strength: number,
+  noise: number,
+): Promise<{ status: number; json: EnhanceResponse }> {
+  const r = await fetch("api/enhance", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+    },
+    body: JSON.stringify({ name, scale, strength, noise }),
+  });
+  return { status: r.status, json: (await r.json()) as EnhanceResponse };
+}
