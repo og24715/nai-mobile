@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "cn";
 import { MODELS, SAMPLERS, SIZES } from "@/lib/options";
 import { MAX_CHARS, type CharPrompt } from "@/hooks/useCharacters";
 
@@ -47,6 +48,9 @@ function numOr(v: string, fallback: number): number {
 export function GenerateForm({ form }: { form: FormState }) {
   const stepsNum = numOr(form.steps, 28);
   const scaleNum = numOr(form.scale, 5);
+  // On Opus, generations are free up to 28 steps; past that they
+  // consume Anlas. The steps UI turns amber as the warning signal.
+  const stepsOver = stepsNum > 28;
 
   const setChar = (i: number, patch: Partial<CharPrompt>) =>
     form.updateChars(form.chars.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -130,13 +134,30 @@ export function GenerateForm({ form }: { form: FormState }) {
           each — never side by side (hard to operate on a phone). */}
       <div>
         <Label className={labelCls}>
-          Steps <span className="font-semibold text-foreground">{Math.round(stepsNum)}</span>
+          Steps{" "}
+          <span
+            className={cn(
+              "font-semibold text-foreground",
+              stepsOver && "text-amber-500",
+            )}
+          >
+            {Math.round(stepsNum)}
+          </span>
+          {stepsOver && (
+            <span className="ml-1.5 text-[11px] font-medium text-amber-500">
+              Anlas消費
+            </span>
+          )}
         </Label>
         <Slider
           value={[stepsNum]}
           min={1}
           max={50}
           step={1}
+          className={cn(
+            stepsOver &&
+              "[&_[data-slot=slider-range]]:bg-amber-500 [&_[data-slot=slider-thumb]]:border-amber-500",
+          )}
           onValueChange={(v) => form.setSteps(String(Array.isArray(v) ? v[0] : v))}
         />
       </div>
