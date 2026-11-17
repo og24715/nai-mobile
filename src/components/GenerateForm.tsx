@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
+import { TagField } from "@/components/TagField";
 import {
   Tabs,
   TabsContent,
@@ -131,20 +131,20 @@ export function GenerateForm({ form }: { form: FormState }) {
                 <TabsTrigger value="negative">ネガティブ</TabsTrigger>
               </TabsList>
               <TabsContent value="positive">
-                <Textarea
+                <TagField
                   id="prompt"
                   placeholder="1girl, ..."
                   className="min-h-[84px] text-base"
                   value={form.prompt}
-                  onChange={(e) => form.setPrompt(e.target.value)}
+                  onChange={form.setPrompt}
                 />
               </TabsContent>
               <TabsContent value="negative">
-                <Textarea
+                <TagField
                   id="negative"
                   className="min-h-[56px] text-base"
                   value={form.negative}
-                  onChange={(e) => form.setNegative(e.target.value)}
+                  onChange={form.setNegative}
                 />
               </TabsContent>
             </Tabs>
@@ -318,17 +318,19 @@ export function GenerateForm({ form }: { form: FormState }) {
                     <TabsTrigger value="negative">ネガティブ</TabsTrigger>
                   </TabsList>
                   <TabsContent value="positive">
-                    <Textarea
+                    <TagField
+                      character
                       className="min-h-[48px] text-base"
                       value={c.prompt}
-                      onChange={(e) => setChar(i, { prompt: e.target.value })}
+                      onChange={(v) => setChar(i, { prompt: v })}
                     />
                   </TabsContent>
                   <TabsContent value="negative">
-                    <Input
-                      className="text-base"
+                    <TagField
+                      character
+                      className="min-h-[44px] text-base"
                       value={c.negative}
-                      onChange={(e) => setChar(i, { negative: e.target.value })}
+                      onChange={(v) => setChar(i, { negative: v })}
                     />
                   </TabsContent>
                 </Tabs>
