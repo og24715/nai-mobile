@@ -130,6 +130,7 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.grid img{width:100%;height:auto;display:block;border-radius:12px}
 .hint{font-size:12px;color:var(--muted)}
 .toprow{display:flex;justify-content:flex-end;margin-bottom:8px}.settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
+.val{color:var(--text);font-weight:600}input[type=range]{padding:0;accent-color:var(--accent)}
 </style></head><body><main>
 <div class="toprow"><a class="settings" href="setup">⚙ 設定</a></div>
 
@@ -150,8 +151,8 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <option value="1216x832">1216 × 832（横）</option>
 <option value="1024x1024">1024 × 1024（正方形）</option>
 </select></div></div>
-<div class="row"><div><label>Steps</label><input type="number" id="steps" value="28" min="1" max="50"></div>
-<div><label>Scale (CFG)</label><input type="number" id="scale" value="5" step="0.1" min="0" max="10"></div></div>
+<div class="row"><div><label>Steps <span class="val" id="stepsVal">28</span></label><input type="range" id="steps" value="28" min="1" max="50" step="1"></div>
+<div><label>Scale (CFG) <span class="val" id="scaleVal">5.0</span></label><input type="range" id="scale" value="5" step="0.1" min="0" max="20"></div></div>
 <div class="row"><div><label>Sampler</label><select id="sampler">
 <option value="k_euler_ancestral" selected>Euler Ancestral</option>
 <option value="k_euler">Euler</option>
@@ -176,6 +177,9 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 const $=id=>document.getElementById(id);
 const fields=['prompt','negative','model','size','steps','scale','sampler','seed','char1','char1neg','char2','char2neg'];
 for(const f of fields){const v=localStorage.getItem('nai.'+f);if(v!==null&&$(f).tagName!=='SELECT'||v!==null&&$(f).value===''){} if(v!==null)$(f).value=v; $(f).addEventListener('change',()=>localStorage.setItem('nai.'+f,$(f).value));}
+function syncVal(id,vid,fmt){const el=$(id),s=$(vid);const f=()=>{s.textContent=fmt(Number(el.value));};el.addEventListener('input',f);el.addEventListener('input',()=>localStorage.setItem('nai.'+id,el.value));f();}
+syncVal('steps','stepsVal',v=>String(Math.round(v)));
+syncVal('scale','scaleVal',v=>v.toFixed(1));
 async function checkToken(){try{const r=await fetch('api/status');const j=await r.json();if(!j.hasToken){location.replace('setup');}}catch(e){}}
 async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';for(const it of j.items){const a=document.createElement('a');a.href=it.url;a.target='_blank';const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);$('recent').appendChild(a);}}catch(e){}}
 $('gen').onclick=async()=>{const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
