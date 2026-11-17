@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Minus, Plus, X } from "lucide-react";
+import { Check, Minus, Plus, Trash2, X } from "lucide-react";
 import { cn } from "cn";
+import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   deleteChip,
   fmtWeight,
@@ -22,32 +28,10 @@ import {
 import { fetchTagSuggestions, type TagSuggestion } from "@/lib/api";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
 
-export interface ChipSel {
-  seg: number;
-  tag: number;
-}
-
-// Snapshot of the currently selected chip, reported up to GenerateForm,
-// which renders ONE shared editor bar stuck to the bottom of the form
-// drawer (improvement #26). The action callbacks are stable wrappers
-// that call through to the owning field's latest closures (kept in a
-// ref), so a snapshot never goes stale even though it is only
-// re-reported when its display fields change.
-export interface ChipEditorState {
-  fieldId: string;
-  text: string;
-  raw: boolean;
-  character: boolean;
-  prefix: string | null;
-  onText: (t: string) => void;
-  onDelete: () => void;
-  onPrefix: (p: string | null) => void;
-  onClose: () => void;
-}
-
 interface Props {
-  // Unique per field instance ("prompt", "char-0-negative", ...). Used
-  // to route the lifted chip selection / editor bar to the right field.
+  // Unique per field instance ("prompt", "char-0-negative", ...).
+  // Used to scope the chip popover's outside-press veto to this
+  // field's own chips.
   fieldId: string;
   value: string;
   onChange: (v: string) => void;
@@ -57,29 +41,119 @@ interface Props {
   // the official suggest-tags relay.
   suggest?: boolean;
   model?: string;
-  // Lifted chip selection (improvement #26): the selection targeting
-  // this field, or null. GenerateForm owns the state so the editor bar
-  // can live outside the field, stuck to the drawer's bottom edge.
-  chipSelection: ChipSel | null;
-  onChipSelect: (fieldId: string, sel: ChipSel | null) => void;
-  onChipEditor: (fieldId: string, ed: ChipEditorState | null) => void;
 }
 
 function fmtCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
+// The per-chip editor (improvement #50): rendered inside the Popover
+// anchored to the chip itself, replacing the shared sticky editor
+// bar (#26) and its hand-rolled outside-tap dismissal (#36) — the
+// Popover's own outside-press / Escape handling does that now. The
+// contents mirror what the bar offered for a chip: a text field
+// holding the chip's own text (Enter or ✓ applies it through
+// setChipText — in place for plain/single-tag chips, split-out for
+// a tag inside a multi-tag section, verbatim body replacement for
+// raw chunks; empty text deletes the chip), a delete button, and —
+// for non-raw chips in character fields only — the
+// source#/target#/mutual# prefix selector. Raw chunks get only the
+// text row plus delete. Weight is NOT adjusted here (#34): each
+// chip carries its own [−][+] step zones.
+function ChipEditorContent({
+  chip,
+  character,
+  onApplyText,
+  onPrefix,
+  onDelete,
+}: {
+  chip: Chip;
+  character: boolean;
+  onApplyText: (t: string) => void;
+  onPrefix: (p: string | null) => void;
+  onDelete: () => void;
+}) {
+  const [draft, setDraft] = useState(chip.text);
+  // Re-seed the draft when the popover's chip changes text through
+  // another action (e.g. a prefix change rewrites the chip text).
+  // Typing never touches chip.text, so this does not fight input.
+  useEffect(() => {
+    setDraft(chip.text);
+  }, [chip.text]);
+  const prefix = splitPrefix(chip.text).prefix;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          value={draft}
+          aria-label="Tag text"
+          enterKeyHint="done"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          autoFocus
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              onApplyText(draft);
+            }
+          }}
+          className="h-tap min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-tag outline-none focus:border-primary"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          aria-label="Apply text"
+          className="h-tap w-tap shrink-0 p-0"
+          onClick={() => onApplyText(draft)}
+        >
+          <Check size={18} />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          aria-label="Delete this tag"
+          className="h-tap w-tap shrink-0 p-0 text-muted-foreground"
+          onClick={onDelete}
+        >
+          <Trash2 size={16} />
+        </Button>
+      </div>
+      {!chip.raw && character && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <select
+            aria-label="Prefix"
+            value={prefix ?? ""}
+            onChange={(e) =>
+              onPrefix(e.target.value === "" ? null : e.target.value)
+            }
+            className="h-tap rounded-md border border-input bg-background px-1.5 text-sm"
+          >
+            <option value="">No prefix</option>
+            <option value="source">source#</option>
+            <option value="target">target#</option>
+            <option value="mutual">mutual#</option>
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A prompt field edited ONLY through its tag chips (improvements #21,
-// #26, #28): the chips plus an inline "add tag" input with the
+// #28): the chips plus an inline "add tag" input with the
 // suggestion strip (#22) are the whole editing UI — there is no
 // free-text textarea anymore. Weight stepping lives ON the chips
 // themselves (#34): each non-raw chip is a [−][label][+] button
-// group. A chip's own text is edited in the shared editor bar (see
-// ChipEditorBar / setChipText), which also holds the prefix selector
-// and delete. The field's string value remains the single source of
-// truth: chips are derived from it on every render, and every edit
-// rewrites it through the same setter, so persistence and generation
-// payloads are untouched.
+// group. Tapping a chip's label opens its editor Popover (#50) with
+// the text / prefix / delete controls. The field's string value
+// remains the single source of truth: chips are derived from it on
+// every render, and every edit rewrites it through the same setter,
+// so persistence and generation payloads are untouched.
 export function TagField({
   fieldId,
   value,
@@ -87,17 +161,17 @@ export function TagField({
   character,
   suggest,
   model,
-  chipSelection,
-  onChipSelect,
-  onChipEditor,
 }: Props) {
   const segs = useMemo(() => parsePrompt(value), [value]);
   const chips = useMemo(() => listChips(segs), [segs]);
-  const sel = chipSelection;
-  const selChip = sel
-    ? chips.find((c) => c.seg === sel.seg && c.tag === sel.tag)
-    : undefined;
-  const selPrefix = selChip ? splitPrefix(selChip.text).prefix : null;
+
+  // Which chip's editor Popover is open, if any (improvement #50).
+  // Local to the field; the stepper / text-edit follow logic below
+  // keeps it bound to the same tag when an edit splits a section
+  // and indices shift.
+  const [openChip, setOpenChip] = useState<{ seg: number; tag: number } | null>(
+    null,
+  );
 
   // --- Suggestions (add-tag input only) --------------------------------
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -196,178 +270,197 @@ export function TagField({
     </div>
   );
 
-  // --- Chip editor (state lifted to GenerateForm, #26) ------------------
   // --- On-chip weight stepping (improvement #34) -----------------------
   // The −/+ zones of a chip step its weight directly through
-  // setChipWeight — the editor bar is not involved. Selection is only
-  // adjusted when the indices move: the stepped chip itself is
-  // followed to its (possibly split-out) position so an open bar
-  // stays on it, and a selection pointing into/after a section that
-  // split is shifted to keep pointing at the same tag.
+  // setChipWeight — the editor popover is not involved. The open
+  // popover is only adjusted when indices move: the stepped chip
+  // itself is followed to its (possibly split-out) position so its
+  // popover stays on it, and an open chip pointing into/after a
+  // section that split is shifted to keep pointing at the same tag.
   const stepChip = (c: Chip, delta: number) => {
     const r = setChipWeight(segs, c.seg, c.tag, (c.weight ?? 1) + delta);
     if (r.segs === segs) return;
     onChange(serializePrompt(r.segs));
-    if (!sel) return;
-    if (sel.seg === c.seg && sel.tag === c.tag) {
-      onChipSelect(fieldId, r.select ?? null);
+    if (!openChip) return;
+    if (openChip.seg === c.seg && openChip.tag === c.tag) {
+      setOpenChip(r.select ?? null);
     } else if (r.segs.length !== segs.length) {
-      if (sel.seg === c.seg && sel.tag > c.tag) {
-        // Same section: the selected tag stays in the remaining
+      if (openChip.seg === c.seg && openChip.tag > c.tag) {
+        // Same section: the open tag stays in the remaining
         // section, one index earlier now that c.tag left it.
-        onChipSelect(fieldId, { seg: sel.seg, tag: sel.tag - 1 });
-      } else if (sel.seg > c.seg) {
-        onChipSelect(fieldId, { seg: sel.seg + 1, tag: sel.tag });
+        setOpenChip({ seg: openChip.seg, tag: openChip.tag - 1 });
+      } else if (openChip.seg > c.seg) {
+        setOpenChip({ seg: openChip.seg + 1, tag: openChip.tag });
       }
     }
   };
-  const applyText = (t: string) => {
-    if (!selChip) return;
-    const r = setChipText(segs, selChip.seg, selChip.tag, t);
+  const applyText = (c: Chip, t: string) => {
+    const r = setChipText(segs, c.seg, c.tag, t);
     if (r.segs !== segs) {
       onChange(serializePrompt(r.segs));
-      // A select target keeps the bar open on the (possibly split-out)
-      // chip; no target means the text was empty and the chip is gone.
-      if (r.select) onChipSelect(fieldId, r.select);
-      else onChipSelect(fieldId, null);
+      // Follow the (possibly split-out) chip so its popover stays
+      // open on it; no select target means the text was empty and
+      // the chip is gone, so the popover closes.
+      setOpenChip(r.select ?? null);
     }
   };
-  const applyDelete = () => {
-    if (!selChip) return;
-    onChange(serializePrompt(deleteChip(segs, selChip.seg, selChip.tag)));
-    onChipSelect(fieldId, null);
+  const applyDelete = (c: Chip) => {
+    onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
+    setOpenChip(null);
   };
-  const applyPrefix = (prefix: string | null) => {
-    if (!selChip) return;
+  const applyPrefix = (c: Chip, prefix: string | null) => {
     onChange(
-      serializePrompt(setChipPrefix(segs, selChip.seg, selChip.tag, prefix)),
+      serializePrompt(setChipPrefix(segs, c.seg, c.tag, prefix)),
     );
   };
 
-  // The reported snapshot's actions delegate to the latest closures so
-  // the shared bar never acts on stale segments.
-  const actionsRef = useRef({ applyText, applyDelete, applyPrefix });
-  useEffect(() => {
-    actionsRef.current = { applyText, applyDelete, applyPrefix };
-  });
+  // Popover open-state routing for one chip. Base UI's dismissal
+  // replaces the old hand-rolled outside-tap listener (#36), with
+  // one exemption carried over from it: an outside press that lands
+  // on one of THIS field's chips is vetoed — a stepper tap must run
+  // the follow logic above (which may move or keep the selection),
+  // and a label tap on another chip opens that chip's popover
+  // instead; neither should be pre-empted by this popover closing.
+  // Presses anywhere else (including other fields' chips) close it.
+  const handleOpenChange =
+    (c: Chip) =>
+    (
+      open: boolean,
+      details: { reason: string; event: Event; cancel: () => void },
+    ) => {
+      if (open) {
+        setOpenChip({ seg: c.seg, tag: c.tag });
+        return;
+      }
+      if (details.reason === "outside-press") {
+        const t = details.event.target as HTMLElement | null;
+        const chipEl = t?.closest?.("[data-chip]");
+        if (
+          chipEl &&
+          chipEl.closest("[data-tagfield]")?.getAttribute("data-tagfield") ===
+            fieldId
+        ) {
+          details.cancel();
+          return;
+        }
+      }
+      setOpenChip(null);
+    };
 
-  const hasSel = !!selChip;
-  const selText = selChip?.text;
-  const selRaw = selChip?.raw ?? false;
-  useEffect(() => {
-    if (selChip) {
-      onChipEditor(fieldId, {
-        fieldId,
-        text: selChip.text,
-        raw: selChip.raw,
-        character: !!character,
-        prefix: selPrefix,
-        onText: (t) => actionsRef.current.applyText(t),
-        onDelete: () => actionsRef.current.applyDelete(),
-        onPrefix: (p) => actionsRef.current.applyPrefix(p),
-        onClose: () => onChipSelect(fieldId, null),
-      });
-    } else {
-      onChipEditor(fieldId, null);
-    }
-    return () => onChipEditor(fieldId, null);
-    // Only the snapshot's display fields are deps: the actions are
-    // stable ref-delegating wrappers, and GenerateForm ignores
-    // re-reports whose display fields are unchanged.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldId, hasSel, selText, selRaw, selPrefix, character]);
+  const editorFor = (c: Chip) => (
+    <ChipEditorContent
+      chip={c}
+      character={!!character}
+      onApplyText={(t) => applyText(c, t)}
+      onPrefix={(p) => applyPrefix(c, p)}
+      onDelete={() => applyDelete(c)}
+    />
+  );
 
   return (
-    <div>
+    <div data-tagfield={fieldId}>
       {/* Chips + add-tag input: the only editing UI. */}
       <div className="flex flex-wrap items-center gap-2">
         {chips.map((c) => {
-          const active = !!sel && sel.seg === c.seg && sel.tag === c.tag;
+          const active =
+            !!openChip && openChip.seg === c.seg && openChip.tag === c.tag;
           const neg = (c.weight ?? 1) < 0;
           if (c.raw) {
             // Raw chunks (brace/bracket syntax) have no weight to
-            // step: a plain chip that only opens the bar's text
+            // step: a plain chip whose tap opens the popover's text
             // editing, as before.
             return (
-              <button
+              <Popover
                 key={`${c.seg}:${c.tag}`}
-                type="button"
-                data-chip
-                onClick={() =>
-                  onChipSelect(fieldId, active ? null : { seg: c.seg, tag: c.tag })
-                }
-                className={cn(
-                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-tag leading-snug",
-                  "border-dashed text-muted-foreground",
-                  active && "border-primary ring-1 ring-primary",
-                )}
+                open={active}
+                onOpenChange={handleOpenChange(c)}
               >
-                <span className="truncate">{c.text}</span>
-              </button>
+                <PopoverTrigger
+                  data-chip
+                  className={cn(
+                    "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-tag leading-snug",
+                    "border-dashed text-muted-foreground",
+                    active && "border-primary ring-1 ring-primary",
+                  )}
+                >
+                  <span className="truncate">{c.text}</span>
+                </PopoverTrigger>
+                <PopoverContent
+                  sideOffset={6}
+                  className="w-[min(320px,90vw)]"
+                >
+                  {editorFor(c)}
+                </PopoverContent>
+              </Popover>
             );
           }
           // Non-raw chips are a joined [−][label][+] button group
           // (improvement #34): the −/+ zones step the weight in
-          // place; the label between them selects the chip and opens
-          // the editor bar (text / prefix / delete). Hand-rolled
+          // place; the label between them is the Popover trigger for
+          // the chip editor (text / prefix / delete). Hand-rolled
           // rather than shadcn's ButtonGroup: that component styles
           // each button's own border and corner radius, which fights
           // this single-pill design (one container border, group-wide
           // active/negative states, truncating label).
           return (
-            <div
+            <Popover
               key={`${c.seg}:${c.tag}`}
-              role="group"
-              data-chip
-              aria-label={c.text}
-              className={cn(
-                "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",
-                neg ? "divide-err/30 border-err/50 text-err" : "divide-border border-border",
-                active && "border-primary ring-1 ring-primary",
-              )}
+              open={active}
+              onOpenChange={handleOpenChange(c)}
             >
-              <button
-                type="button"
-                aria-label={`Decrease the weight of ${c.text}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  stepChip(c, -0.1);
-                }}
-                className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
-              >
-                <Minus size={18} />
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  onChipSelect(fieldId, active ? null : { seg: c.seg, tag: c.tag })
-                }
-                className="flex min-w-0 touch-manipulation items-center gap-1.5 px-1.5 text-tag leading-snug"
-              >
-                <span className="truncate">{c.text}</span>
-                {c.weight !== null && (
-                  <span
-                    className={cn(
-                      "shrink-0 text-tag-badge font-semibold",
-                      neg ? "text-err" : "text-muted-foreground",
-                    )}
-                  >
-                    ×{fmtWeight(c.weight)}
-                  </span>
+              <div
+                role="group"
+                data-chip
+                aria-label={c.text}
+                className={cn(
+                  "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",
+                  neg ? "divide-err/30 border-err/50 text-err" : "divide-border border-border",
+                  active && "border-primary ring-1 ring-primary",
                 )}
-              </button>
-              <button
-                type="button"
-                aria-label={`Increase the weight of ${c.text}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  stepChip(c, 0.1);
-                }}
-                className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
               >
-                <Plus size={18} />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  aria-label={`Decrease the weight of ${c.text}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stepChip(c, -0.1);
+                  }}
+                  className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+                >
+                  <Minus size={18} />
+                </button>
+                <PopoverTrigger className="flex min-w-0 touch-manipulation items-center gap-1.5 px-1.5 text-tag leading-snug">
+                  <span className="truncate">{c.text}</span>
+                  {c.weight !== null && (
+                    <span
+                      className={cn(
+                        "shrink-0 text-tag-badge font-semibold",
+                        neg ? "text-err" : "text-muted-foreground",
+                      )}
+                    >
+                      ×{fmtWeight(c.weight)}
+                    </span>
+                  )}
+                </PopoverTrigger>
+                <button
+                  type="button"
+                  aria-label={`Increase the weight of ${c.text}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    stepChip(c, 0.1);
+                  }}
+                  className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+                >
+                  <Plus size={18} />
+                </button>
+              </div>
+              <PopoverContent
+                sideOffset={6}
+                className="w-[min(320px,90vw)]"
+              >
+                {editorFor(c)}
+              </PopoverContent>
+            </Popover>
           );
         })}
         {/* Clear button (improvement #49): the same InputGroup

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -31,12 +31,7 @@ import {
   AttachmentTitle,
 } from "@/components/ui/attachment";
 import { X } from "lucide-react";
-import {
-  TagField,
-  type ChipEditorState,
-  type ChipSel,
-} from "@/components/TagField";
-import { ChipEditorBar } from "@/components/ChipEditorBar";
+import { TagField } from "@/components/TagField";
 import {
   Tabs,
   TabsContent,
@@ -179,90 +174,6 @@ export function GenerateForm({ form }: { form: FormState }) {
     }
   };
 
-  // --- Lifted chip selection + shared editor bar (improvement #26) ----
-  // The selected chip lives here, not inside TagField, so ONE editor
-  // bar can be rendered stuck to the bottom of the drawer scroll area:
-  // with many tags the editor controls stay reachable without
-  // scrolling to the field's own inline bar. Each TagField reports a
-  // ChipEditorState snapshot for its selected chip; re-reports whose
-  // display fields are unchanged are ignored (the snapshot's actions
-  // delegate to the field's latest closures, so it never goes stale).
-  const [activeChip, setActiveChip] = useState<
-    ({ fieldId: string } & ChipSel) | null
-  >(null);
-  const [chipEditor, setChipEditor] = useState<ChipEditorState | null>(null);
-
-  const handleChipSelect = useCallback(
-    (fieldId: string, sel: ChipSel | null) => {
-      setActiveChip(sel ? { fieldId, seg: sel.seg, tag: sel.tag } : null);
-      if (!sel) {
-        setChipEditor((prev) =>
-          prev && prev.fieldId === fieldId ? null : prev,
-        );
-      }
-    },
-    [],
-  );
-  const handleChipEditor = useCallback(
-    (fieldId: string, ed: ChipEditorState | null) => {
-      setChipEditor((prev) => {
-        if (!ed) return prev && prev.fieldId === fieldId ? null : prev;
-        if (
-          prev &&
-          prev.fieldId === ed.fieldId &&
-          prev.text === ed.text &&
-          prev.raw === ed.raw &&
-          prev.character === ed.character &&
-          prev.prefix === ed.prefix
-        ) {
-          return prev;
-        }
-        return ed;
-      });
-    },
-    [],
-  );
-  const chipProps = (fieldId: string) => ({
-    fieldId,
-    chipSelection:
-      activeChip && activeChip.fieldId === fieldId
-        ? { seg: activeChip.seg, tag: activeChip.tag }
-        : null,
-    onChipSelect: handleChipSelect,
-    onChipEditor: handleChipEditor,
-  });
-
-  // --- Tap outside the editor bar to close it (improvement #36) -------
-  // While the bar is open, a pointerdown anywhere outside it clears
-  // the chip selection. Two kinds of targets are exempt and left to
-  // their own handlers: the bar itself (its controls), and chips
-  // (marked data-chip in TagField — a center tap switches/toggles the
-  // selection, a −/+ tap steps the weight with #34's follow logic).
-  // Everything else — the add-tag input, accordion headers, sliders,
-  // the drawer footer, the overlay — counts as outside. The listener
-  // only observes: it never preventDefaults or stops propagation, so
-  // the tapped control keeps its own behavior.
-  const barRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef(chipEditor);
-  useEffect(() => {
-    editorRef.current = chipEditor;
-  });
-  const barOpen = chipEditor !== null;
-  useEffect(() => {
-    if (!barOpen) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      if (barRef.current?.contains(t)) return;
-      if (t.closest?.("[data-chip]")) return;
-      editorRef.current?.onClose();
-    };
-    // Capture phase, so a control that stops propagation on its own
-    // pointerdown cannot keep the bar open by hiding the tap.
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [barOpen]);
-
   const setChar = (i: number, patch: Partial<CharPrompt>) =>
     form.updateChars(form.chars.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const removeChar = (i: number) =>
@@ -274,7 +185,7 @@ export function GenerateForm({ form }: { form: FormState }) {
   };
 
   return (
-    <div className={chipEditor ? "pb-36" : undefined}>
+    <div>
     {/* Restore from a device image (#23 + #31; the entry point
         moved from under the hero into the form in #47): picking
         a file parses its embedded NovelAI settings locally and
@@ -312,20 +223,20 @@ export function GenerateForm({ form }: { form: FormState }) {
               </TabsList>
               <TabsContent value="positive">
                 <TagField
+                  fieldId="prompt"
                   suggest
                   model={form.model}
                   value={form.prompt}
                   onChange={form.setPrompt}
-                  {...chipProps("prompt")}
                 />
               </TabsContent>
               <TabsContent value="negative">
                 <TagField
+                  fieldId="negative"
                   suggest
                   model={form.model}
                   value={form.negative}
                   onChange={form.setNegative}
-                  {...chipProps("negative")}
                 />
               </TabsContent>
             </Tabs>
@@ -605,22 +516,22 @@ export function GenerateForm({ form }: { form: FormState }) {
                   </TabsList>
                   <TabsContent value="positive">
                     <TagField
+                      fieldId={`char-${i}-prompt`}
                       suggest
                       model={form.model}
                       character
                       value={c.prompt}
                       onChange={(v) => setChar(i, { prompt: v })}
-                      {...chipProps(`char-${i}-prompt`)}
                     />
                   </TabsContent>
                   <TabsContent value="negative">
                     <TagField
+                      fieldId={`char-${i}-negative`}
                       suggest
                       model={form.model}
                       character
                       value={c.negative}
                       onChange={(v) => setChar(i, { negative: v })}
-                      {...chipProps(`char-${i}-negative`)}
                     />
                   </TabsContent>
                 </Tabs>
@@ -849,18 +760,6 @@ export function GenerateForm({ form }: { form: FormState }) {
         </AccordionContent>
       </AccordionItem>
     </Accordion>
-
-    {/* Shared chip editor bar: stuck to the bottom of the drawer
-        scroll area (above the ⚙ footer in FormModal) while any chip
-        is selected, so the editor controls are reachable without
-        scrolling however many tags the field has. The wrapper's extra
-        bottom padding while it is visible lets the last chips scroll
-        clear of the bar. */}
-    {chipEditor && (
-      <div ref={barRef} className="sticky bottom-0 z-10 -mx-5 mt-3 border-t border-border bg-background px-5 py-2.5">
-        <ChipEditorBar editor={chipEditor} />
-      </div>
-    )}
     </div>
   );
 }
