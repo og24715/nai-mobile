@@ -31,12 +31,15 @@ NovelAI の Persistent API Token が必要 (NovelAI の Account Settings から�
 ## 実行
 
 開発 / 手動起動は `npm start`。常駐させる場合は systemd ユーザーサービスを使う。
+サービス定義は `nai-mobile.service.example` として置いてあるので、コピーして配置する。
 
 ```sh
-cp nai-mobile.service ~/.config/systemd/user/
+cp nai-mobile.service.example ~/.config/systemd/user/nai-mobile.service
 systemctl --user daemon-reload
 systemctl --user enable --now nai-mobile
 ```
+
+example は systemd の `%h` (使う人のホーム) 記法で書かれており、クローン先が `~/workspace/nai-mobile`、node が `~/.local/bin/node` にある前提。配置先や node の場所が違う場合は、コピーしたファイルのパスを直すこと。
 
 ポートは 8196 (`http://localhost:8196/`)。
 

@@ -3,8 +3,8 @@ Description=NovelAI mobile front (TypeScript)
 After=network.target
 
 [Service]
-ExecStart=/home/og24715/.local/bin/node /home/og24715/workspace/nai-mobile/dist/server.js
-WorkingDirectory=/home/og24715/workspace/nai-mobile
+ExecStart=%h/.local/bin/node %h/workspace/nai-mobile/dist/server.js
+WorkingDirectory=%h/workspace/nai-mobile
 Restart=on-failure
 RestartSec=3
 

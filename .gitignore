@@ -2,3 +2,4 @@ node_modules/
 dist/
 token.txt
 outputs/*.png
+nai-mobile.service
