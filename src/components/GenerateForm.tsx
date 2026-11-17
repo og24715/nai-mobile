@@ -404,7 +404,10 @@ export function GenerateForm({ form }: { form: FormState }) {
                 )}
               </Label>
               {form.baseImage ? (
-                <Attachment className="w-full">
+                <Attachment
+                  orientation="vertical"
+                  className="w-full has-data-[slot=attachment-content]:w-full"
+                >
                   <AttachmentMedia variant="image">
                     <img src={form.baseImage.url} alt="" />
                   </AttachmentMedia>
@@ -580,7 +583,10 @@ export function GenerateForm({ form }: { form: FormState }) {
               >
                 {form.vibes.map((v) => (
                   <div key={v.id} className="flex flex-col gap-[18px]">
-                    <Attachment className="w-full">
+                    <Attachment
+                      orientation="vertical"
+                      className="w-full has-data-[slot=attachment-content]:w-full"
+                    >
                       <AttachmentMedia variant="image">
                         <img src={v.url} alt="" />
                       </AttachmentMedia>
@@ -672,7 +678,10 @@ export function GenerateForm({ form }: { form: FormState }) {
               >
                 {form.refs.map((r) => (
                   <div key={r.id} className="flex flex-col gap-[18px]">
-                    <Attachment className="w-full">
+                    <Attachment
+                      orientation="vertical"
+                      className="w-full has-data-[slot=attachment-content]:w-full"
+                    >
                       <AttachmentMedia variant="image">
                         <img src={r.url} alt="" />
                       </AttachmentMedia>
