@@ -7,9 +7,11 @@ import { useCharacters } from "@/hooks/useCharacters";
 import { usePersistedField } from "@/hooks/usePersistedField";
 import {
   fetchRecent,
+  fetchSubscription,
   requestGenerate,
   type GenerateRequest,
   type RecentItem,
+  type SubscriptionUsage,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
@@ -27,6 +29,7 @@ export default function MainPage() {
   const [chars, updateChars] = useCharacters();
 
   const [heroUrl, setHeroUrl] = useState("");
+  const [usage, setUsage] = useState<SubscriptionUsage | null>(null);
   const [items, setItems] = useState<RecentItem[]>([]);
   const [status, setStatus] = useState<StatusState>({ kind: "", text: "" });
   const [generating, setGenerating] = useState(false);
@@ -44,6 +47,19 @@ export default function MainPage() {
     }
   }, []);
 
+  // Allowance for the thin bar under the status line. Any failure
+  // (or a non-Opus account without a usage allowance) leaves it
+  // null and the bar simply isn't rendered.
+  const refreshSubscription = useCallback(async () => {
+    const token = readStored(TOKEN_KEY);
+    if (!token) {
+      setUsage(null);
+      return;
+    }
+    const info = await fetchSubscription(token);
+    setUsage(info ? info.usage : null);
+  }, []);
+
   // Unregistered (no token in this browser): go to the setup page.
   useEffect(() => {
     if (!readStored(TOKEN_KEY)) {
@@ -51,7 +67,8 @@ export default function MainPage() {
       return;
     }
     void refreshRecent();
-  }, [refreshRecent]);
+    void refreshSubscription();
+  }, [refreshRecent, refreshSubscription]);
 
   // Modal <-> browser Back integration: opening pushes a history
   // entry, Back (popstate) closes the modal, and × / Esc consume the
@@ -127,6 +144,7 @@ export default function MainPage() {
         setStatus({ kind: "ok", text: "完了 seed=" + j.seed });
         if (j.images && j.images.length) setHeroUrl(j.images[0]);
         void refreshRecent();
+        void refreshSubscription();
       }
     } catch (e) {
       setStatus({ kind: "err", text: "通信エラー: " + e });
@@ -157,7 +175,7 @@ export default function MainPage() {
 
   return (
     <>
-      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} />
+      <Viewer heroUrl={heroUrl} status={status} usage={usage} items={items} onSelect={selectThumb} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />

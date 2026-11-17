@@ -19,6 +19,7 @@ const OUTPUTS = path.join(ROOT, "outputs");
 const STATIC = path.join(ROOT, "dist");
 const PORT = Number(process.env.PORT) || 8196;
 const API_URL = "https://image.novelai.net/ai/generate-image";
+const SUBSCRIPTION_URL = "https://image.novelai.net/user/subscription";
 
 fs.mkdirSync(OUTPUTS, { recursive: true });
 
@@ -172,6 +173,42 @@ const server = http.createServer(async (req, res) => {
         .sort((a, b) => b.mtime - a.mtime).slice(0, 30)
         .map((x) => ({ name: x.name, url: "outputs/" + encodeURIComponent(x.name) }));
       sendJson(res, 200, { ok: true, items }); return;
+    }
+    if (req.method === "GET" && p === "api/subscription") {
+      // Same relay pattern as generate: the browser's token arrives as
+      // a per-request Authorization header and is used in memory for
+      // this one upstream call only — never stored or logged. Only
+      // derived fields are returned; the client renders a thin bar
+      // from them and never displays the raw numbers.
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 30_000);
+      let resp: Response;
+      try {
+        resp = await fetch(SUBSCRIPTION_URL, { signal: ctrl.signal,
+          headers: { Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0" } });
+      } catch {
+        clearTimeout(timer);
+        sendJson(res, 502, { ok: false, error: "NovelAI API への接続に失敗しました" }); return;
+      }
+      clearTimeout(timer);
+      if (!resp.ok) {
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}` }); return;
+      }
+      const data = (await resp.json()) as {
+        tier?: number;
+        active?: boolean;
+        trainingStepsLeft?: { fixedTrainingStepsLeft?: number; purchasedTrainingSteps?: number };
+        usage?: { percent?: number; isNegative?: boolean } | null;
+      };
+      const tsl = data.trainingStepsLeft || {};
+      const anlasTotal = (Number(tsl.fixedTrainingStepsLeft) || 0) + (Number(tsl.purchasedTrainingSteps) || 0);
+      const usage = data.usage
+        ? { percent: Number(data.usage.percent) || 0, isNegative: !!data.usage.isNegative }
+        : null;
+      sendJson(res, 200, { tier: typeof data.tier === "number" ? data.tier : null, active: !!data.active, anlasTotal, usage }); return;
     }
     if (req.method === "GET" && p.startsWith("outputs/")) {
       const name = path.basename(decodeURIComponent(p.slice("outputs/".length)));

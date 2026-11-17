@@ -25,6 +25,45 @@ export interface GenerateResponse {
   error?: string;
 }
 
+export interface SubscriptionUsage {
+  percent: number;
+  isNegative: boolean;
+}
+
+export interface SubscriptionInfo {
+  tier: number | null;
+  active: boolean;
+  anlasTotal: number;
+  usage: SubscriptionUsage | null;
+}
+
+// Returns null on any failure (no token, upstream error, offline) —
+// the caller renders nothing in that case.
+export async function fetchSubscription(
+  token: string,
+): Promise<SubscriptionInfo | null> {
+  try {
+    const r = await fetch("api/subscription", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return {
+      tier: typeof j.tier === "number" ? j.tier : null,
+      active: !!j.active,
+      anlasTotal: Number(j.anlasTotal) || 0,
+      usage: j.usage
+        ? {
+            percent: Number(j.usage.percent) || 0,
+            isNegative: !!j.usage.isNegative,
+          }
+        : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchRecent(): Promise<RecentItem[]> {
   const r = await fetch("api/recent");
   const j = await r.json();
