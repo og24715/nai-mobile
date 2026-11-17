@@ -78,6 +78,20 @@ export interface FormState {
   onAddVibe: (f: File) => void;
   onRemoveVibe: (id: number) => void;
   onUpdateVibe: (id: number, patch: { strength?: number; info?: number }) => void;
+  refs: {
+    id: number;
+    name: string;
+    url: string;
+    type: string;
+    strength: number;
+    fidelity: number;
+  }[];
+  onAddRef: (f: File) => void;
+  onRemoveRef: (id: number) => void;
+  onUpdateRef: (
+    id: number,
+    patch: { type?: string; strength?: number; fidelity?: number },
+  ) => void;
   setPrompt: (v: string) => void;
   setNegative: (v: string) => void;
   setModel: (v: string) => void;
@@ -90,6 +104,14 @@ export interface FormState {
 }
 
 const labelCls = "mb-1.5 block text-sm font-medium text-muted-foreground";
+
+// Precise Reference types (improvement #45): the value is the
+// API's description base_caption string; the label is the UI text.
+const REF_TYPES = [
+  { value: "character", label: "キャラクター" },
+  { value: "style", label: "スタイル" },
+  { value: "character&style", label: "両方" },
+];
 
 function numOr(v: string, fallback: number): number {
   const n = Number(v);
@@ -670,6 +692,114 @@ export function GenerateForm({ form }: { form: FormState }) {
                 <p className="text-xs text-muted-foreground">
                   エンコードに 2 Anlas/枚（初回のみ）
                 </p>
+              </div>
+            </div>
+
+            {/* Precise Reference (improvement #45): 0–4 director
+                reference images (V4.5 only). Each entry's image is
+                downscaled client-side to a 1024px long side at
+                generation time and sent in the five
+                director_reference_* arrays; Fidelity is inverted
+                into the secondary strength on the server. Same
+                inert-with-note treatment on unsupported models. */}
+            <div>
+              <Label className={labelCls}>Precise Reference</Label>
+              {!caps.preciseReference && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  このモデルでは使えません
+                </p>
+              )}
+              <div
+                className={cn(
+                  "flex flex-col gap-[18px]",
+                  !caps.preciseReference && "pointer-events-none opacity-50",
+                )}
+                aria-disabled={!caps.preciseReference}
+              >
+                {form.refs.map((r) => (
+                  <div key={r.id} className="flex flex-col gap-[18px]">
+                    <Attachment className="w-full">
+                      <AttachmentMedia variant="image">
+                        <img src={r.url} alt="" />
+                      </AttachmentMedia>
+                      <AttachmentContent>
+                        <AttachmentTitle>{r.name}</AttachmentTitle>
+                      </AttachmentContent>
+                      <AttachmentActions>
+                        <AttachmentAction
+                          aria-label="参照画像を外す"
+                          onClick={() => form.onRemoveRef(r.id)}
+                        >
+                          <X />
+                        </AttachmentAction>
+                      </AttachmentActions>
+                    </Attachment>
+                    <div>
+                      <Label className={labelCls}>タイプ</Label>
+                      <Select
+                        items={REF_TYPES}
+                        value={r.type}
+                        onValueChange={(v) => v && form.onUpdateRef(r.id, { type: v })}
+                      >
+                        <SelectTrigger className="h-11 w-full text-base">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {REF_TYPES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className={labelCls}>
+                        Strength{" "}
+                        <span className="text-lg font-semibold tabular-nums text-foreground">
+                          {r.strength.toFixed(2)}
+                        </span>
+                      </Label>
+                      <Slider
+                        value={[r.strength]}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        onValueChange={(val) => form.onUpdateRef(r.id, { strength: Array.isArray(val) ? val[0] : val })}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelCls}>
+                        Fidelity{" "}
+                        <span className="text-lg font-semibold tabular-nums text-foreground">
+                          {r.fidelity.toFixed(2)}
+                        </span>
+                      </Label>
+                      <Slider
+                        value={[r.fidelity]}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        onValueChange={(val) => form.onUpdateRef(r.id, { fidelity: Array.isArray(val) ? val[0] : val })}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {form.refs.length < 4 && (
+                  <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
+                    ＋ 参照を追加
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) form.onAddRef(f);
+                      }}
+                    />
+                  </label>
+                )}
               </div>
             </div>
           </div>

@@ -21,7 +21,7 @@ import {
   type SubscriptionInfo,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
-import { fileToBase64, fileToCoverPngBase64 } from "@/lib/baseImage";
+import { fileToBase64, fileToCoverPngBase64, fileToDownscaledPngBase64 } from "@/lib/baseImage";
 import { modelCaps } from "@/lib/capabilities";
 import {
   mapSettingsToForm,
@@ -96,6 +96,37 @@ export default function MainPage() {
   };
   const updateVibe = (id: number, patch: { strength?: number; info?: number }) => {
     setVibes((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+  };
+  // Precise Reference (improvement #45): same session-state
+  // pattern as vibes. The downscaled PNG base64 is prepared at
+  // generation time (only for V4.5 models — elsewhere the server
+  // strips the parameters anyway).
+  interface RefEntry {
+    id: number;
+    file: File;
+    url: string;
+    type: string;
+    strength: number;
+    fidelity: number;
+  }
+  const [refs, setRefs] = useState<RefEntry[]>([]);
+  const refSeq = useRef(0);
+  const addRef = (f: File) => {
+    setRefs((prev) =>
+      prev.length >= 4
+        ? prev
+        : [...prev, { id: ++refSeq.current, file: f, url: URL.createObjectURL(f), type: "character", strength: 0.7, fidelity: 0.5 }],
+    );
+  };
+  const removeRef = (id: number) => {
+    setRefs((prev) => {
+      const hit = prev.find((r) => r.id === id);
+      if (hit) URL.revokeObjectURL(hit.url);
+      return prev.filter((r) => r.id !== id);
+    });
+  };
+  const updateRef = (id: number, patch: { type?: string; strength?: number; fidelity?: number }) => {
+    setRefs((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   };
 
   const [heroUrl, setHeroUrl] = useState("");
@@ -374,6 +405,23 @@ export default function MainPage() {
       vibePayload = encoded;
       setStatus({ kind: "", text: "生成中…（数十秒かかることがあります）" });
     }
+    // Precise Reference (#45): downscale each entry to a 1024px
+    // long side and send the set; the server expands it into
+    // the director_reference_* arrays. V4.5 models only.
+    let refPayload: GenerateRequest["references"];
+    if (modelCaps(model).preciseReference && refs.length) {
+      try {
+        refPayload = [];
+        for (const r of refs) {
+          const b64 = await fileToDownscaledPngBase64(r.file, 1024);
+          refPayload.push({ image: b64, type: r.type, strength: r.strength, fidelity: r.fidelity });
+        }
+      } catch {
+        setStatus({ kind: "err", text: "参照画像を読み込めませんでした" });
+        setGenerating(false);
+        return;
+      }
+    }
     const body: GenerateRequest = {
       prompt,
       negative,
@@ -391,6 +439,7 @@ export default function MainPage() {
       characters: chars.map((c) => ({ prompt: c.prompt, negative: c.negative })),
       ...(image ? { image, strength: Number(strength), noise: Number(noise) } : {}),
       ...(vibePayload ? { vibes: vibePayload } : {}),
+      ...(refPayload ? { references: refPayload } : {}),
     };
     try {
       const { status: httpStatus, json: j } = await requestGenerate(token, body);
@@ -437,6 +486,17 @@ export default function MainPage() {
     onAddVibe: addVibe,
     onRemoveVibe: removeVibe,
     onUpdateVibe: updateVibe,
+    refs: refs.map((r) => ({
+      id: r.id,
+      name: r.file.name,
+      url: r.url,
+      type: r.type,
+      strength: r.strength,
+      fidelity: r.fidelity,
+    })),
+    onAddRef: addRef,
+    onRemoveRef: removeRef,
+    onUpdateRef: updateRef,
     setPrompt,
     setNegative,
     setModel,

@@ -31,6 +31,17 @@ export interface GenerateRequest {
     strength: number;
     informationExtracted: number;
   }[];
+  // Precise Reference (improvement #45): present only when the
+  // model supports it (V4.5 family) and at least one entry
+  // exists. image is PNG base64 downscaled client-side to a
+  // 1024px long side; the server expands the entries into the
+  // five director_reference_* arrays.
+  references?: {
+    image: string;
+    type: string;
+    strength: number;
+    fidelity: number;
+  }[];
 }
 
 export interface GenerateResponse {

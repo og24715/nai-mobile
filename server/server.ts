@@ -43,6 +43,10 @@ interface GenInput {
   // /api/encode-vibe on the client. Wired into the payload only
   // for models whose capability flags allow it (see modelCaps).
   vibes?: { encoded?: string; strength?: number; informationExtracted?: number }[];
+  // Precise Reference (improvement #45): entries expanded into
+  // the director_reference_* arrays for V4.5 models only (see
+  // modelCaps); stripped for everything else.
+  references?: { image?: string; type?: string; strength?: number; fidelity?: number }[];
 }
 
 function clamp01(v: number, fallback: number): number {
@@ -173,6 +177,28 @@ function buildPayload(g: GenInput) {
     parameters.reference_image_multiple = vibes.map((v) => String(v.encoded));
     parameters.reference_strength_multiple = vibes.map((v) => clamp01(Number(v.strength), 0.6));
     parameters.reference_information_extracted_multiple = vibes.map((v) => clamp01(Number(v.informationExtracted), 1));
+  }
+  // Precise Reference (improvement #45): the five parallel
+  // director_reference_* arrays, in entry order. Descriptions
+  // carry the reference type as the base caption; the secondary
+  // strength is the fidelity inversion (1 - fidelity) and the
+  // information extracted is fixed at 1.0, matching the official
+  // client's shape. Stripped for non-V4.5 models even if sent.
+  const refs = (Array.isArray(g.references) ? g.references : [])
+    .filter((r) => r && typeof r.image === "string" && r.image.length > 0)
+    .slice(0, 4);
+  if (caps.preciseReference && refs.length) {
+    const refType = (t: unknown) =>
+      t === "style" || t === "character&style" ? String(t) : "character";
+    parameters.director_reference_images = refs.map((r) =>
+      String(r.image).replace(/^data:image\/[a-z+]+;base64,/i, ""));
+    parameters.director_reference_descriptions = refs.map((r) => ({
+      caption: { base_caption: refType(r.type), char_captions: [] },
+      legacy_uc: false,
+    }));
+    parameters.director_reference_strength_values = refs.map((r) => clamp01(Number(r.strength), 0.7));
+    parameters.director_reference_secondary_strength_values = refs.map((r) => 1 - clamp01(Number(r.fidelity), 0.5));
+    parameters.director_reference_information_extracted = refs.map(() => 1.0);
   }
   return { payload: { input, model, action: isImg2Img ? "img2img" : "generate", parameters }, seed, model };
 }
