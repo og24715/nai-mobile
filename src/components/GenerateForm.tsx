@@ -210,10 +210,17 @@ export function GenerateForm({ form }: { form: FormState }) {
         support): each trigger's header is sticky with an opaque
         background matching the drawer surface and its own hairline
         divider, so an open section's title stays visible while its
-        content scrolls, until the next section pushes it away. */}
+        content scrolls, until the next section pushes it away.
+        The stick offset is -12px, not 0 (#59): the scroll area's
+        top padding otherwise leaves a ~10px band above the stuck
+        header where scrolled content stays visible and flickers
+        through; sticking the header slightly above the scrollport
+        top lets its opaque box cover that band completely. The
+        negative offset has no effect while a header is not stuck,
+        so the resting layout is unchanged. */}
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-[-12px] z-20 border-b border-border bg-background">
           Prompt
         </AccordionTrigger>
         <AccordionContent>
@@ -252,7 +259,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="settings">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-[-12px] z-20 border-b border-border bg-background">
           Settings
         </AccordionTrigger>
         <AccordionContent>
@@ -491,7 +498,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="characters">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-[-12px] z-20 border-b border-border bg-background">
           Characters
           <span className="ml-1.5 text-xs font-normal text-muted-foreground">
             (V4 and up)
@@ -563,7 +570,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="references">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-[-12px] z-20 border-b border-border bg-background">
           Reference Images
         </AccordionTrigger>
         <AccordionContent>
