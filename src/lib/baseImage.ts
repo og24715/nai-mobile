@@ -1,3 +1,18 @@
+// Read a device file as base64 without the data: prefix (the
+// shape NovelAI's image parameters take). Used for Vibe Transfer
+// encoding (improvement #44), where the file is sent as-is.
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const s = String(r.result || "");
+      resolve(s.replace(/^data:[^,]*,/, ""));
+    };
+    r.onerror = () => reject(new Error("file read failed"));
+    r.readAsDataURL(file);
+  });
+}
+
 // Base-image preparation for img2img (improvement #43): draw a
 // device-picked image onto a canvas at the selected generation
 // size using cover-fit (scale to fill, center-crop the overflow)

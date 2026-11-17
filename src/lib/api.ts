@@ -23,6 +23,14 @@ export interface GenerateRequest {
   image?: string;
   strength?: number;
   noise?: number;
+  // Vibe Transfer (improvement #44): present only when the model
+  // supports it and at least one vibe has been encoded. encoded
+  // is the string returned by /api/encode-vibe.
+  vibes?: {
+    encoded: string;
+    strength: number;
+    informationExtracted: number;
+  }[];
 }
 
 export interface GenerateResponse {
@@ -174,6 +182,34 @@ export async function requestGenerate(
     body: JSON.stringify(body),
   });
   return { status: r.status, json: (await r.json()) as GenerateResponse };
+}
+
+export interface EncodeVibeResponse {
+  ok: boolean;
+  vibe?: string;
+  error?: string;
+}
+
+// Encode one reference image for Vibe Transfer (improvement #44)
+// via the server's relay to NovelAI's /ai/encode-vibe. The
+// upstream answers with a binary blob; the server returns it
+// base64-encoded, which is the form generation expects in
+// reference_image_multiple.
+export async function requestEncodeVibe(
+    token: string,
+  image: string,
+  model: string,
+  informationExtracted: number,
+): Promise<{ status: number; json: EncodeVibeResponse }> {
+  const r = await fetch("api/encode-vibe", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+    },
+    body: JSON.stringify({ image, model, informationExtracted }),
+  });
+  return { status: r.status, json: (await r.json()) as EncodeVibeResponse };
 }
 
 export interface UpscaleResponse {

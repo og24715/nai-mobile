@@ -12,6 +12,7 @@ import { usePersistedField } from "@/hooks/usePersistedField";
 import {
   fetchRecent,
   fetchSubscription,
+  requestEncodeVibe,
   requestEnhance,
   requestGenerate,
   requestUpscale,
@@ -20,7 +21,8 @@ import {
   type SubscriptionInfo,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
-import { fileToCoverPngBase64 } from "@/lib/baseImage";
+import { fileToBase64, fileToCoverPngBase64 } from "@/lib/baseImage";
+import { modelCaps } from "@/lib/capabilities";
 import {
   mapSettingsToForm,
   readNaiSettings,
@@ -58,6 +60,42 @@ export default function MainPage() {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
     });
+  };
+  // Vibe Transfer (improvement #44): reference entries are
+  // session state (Files cannot persist). Encoded vibes are
+  // cached in a ref keyed by file identity + model + information
+  // extracted, so re-generating with unchanged entries is free;
+  // changing the model or an entry's Information Extracted slider
+  // misses the cache and re-encodes that entry (2 Anlas) at the
+  // next generation.
+  interface VibeEntry {
+    id: number;
+    file: File;
+    url: string;
+    strength: number;
+    info: number;
+  }
+  const [vibes, setVibes] = useState<VibeEntry[]>([]);
+  const vibeCache = useRef(new Map<string, string>());
+  const vibeSeq = useRef(0);
+  const vibeKey = (v: VibeEntry, m: string) =>
+    `${v.file.name}:${v.file.size}:${v.file.lastModified}|${m}|${v.info}`;
+  const addVibe = (f: File) => {
+    setVibes((prev) =>
+      prev.length >= 4
+        ? prev
+        : [...prev, { id: ++vibeSeq.current, file: f, url: URL.createObjectURL(f), strength: 0.6, info: 1 }],
+    );
+  };
+  const removeVibe = (id: number) => {
+    setVibes((prev) => {
+      const hit = prev.find((v) => v.id === id);
+      if (hit) URL.revokeObjectURL(hit.url);
+      return prev.filter((v) => v.id !== id);
+    });
+  };
+  const updateVibe = (id: number, patch: { strength?: number; info?: number }) => {
+    setVibes((prev) => prev.map((v) => (v.id === id ? { ...v, ...patch } : v)));
   };
 
   const [heroUrl, setHeroUrl] = useState("");
@@ -303,6 +341,39 @@ export default function MainPage() {
         return;
       }
     }
+    // Vibe Transfer (#44): encode any entry not cached for the
+    // current model + information extracted, then generate with
+    // the encoded set. Entries are skipped entirely on models
+    // without the capability (the server would strip them too).
+    let vibePayload: GenerateRequest["vibes"];
+    if (modelCaps(model).vibeTransfer && vibes.length) {
+      const encoded: NonNullable<GenerateRequest["vibes"]> = [];
+      for (const v of vibes) {
+        const key = vibeKey(v, model);
+        let enc = vibeCache.current.get(key);
+        if (!enc) {
+          setStatus({ kind: "", text: "Vibeをエンコード中…" });
+          try {
+            const b64 = await fileToBase64(v.file);
+            const { status: hs, json: j } = await requestEncodeVibe(token, b64, model, v.info);
+            if (!j.ok || !j.vibe) {
+              setStatus({ kind: "err", text: "エラー: " + (j.error || hs) });
+              setGenerating(false);
+              return;
+            }
+            enc = j.vibe;
+            vibeCache.current.set(key, enc);
+          } catch (e) {
+            setStatus({ kind: "err", text: "通信エラー: " + e });
+            setGenerating(false);
+            return;
+          }
+        }
+        encoded.push({ encoded: enc, strength: v.strength, informationExtracted: v.info });
+      }
+      vibePayload = encoded;
+      setStatus({ kind: "", text: "生成中…（数十秒かかることがあります）" });
+    }
     const body: GenerateRequest = {
       prompt,
       negative,
@@ -319,6 +390,7 @@ export default function MainPage() {
       seed: seed === "" ? null : Number(seed),
       characters: chars.map((c) => ({ prompt: c.prompt, negative: c.negative })),
       ...(image ? { image, strength: Number(strength), noise: Number(noise) } : {}),
+      ...(vibePayload ? { vibes: vibePayload } : {}),
     };
     try {
       const { status: httpStatus, json: j } = await requestGenerate(token, body);
@@ -355,6 +427,16 @@ export default function MainPage() {
     noise,
     setStrength,
     setNoise,
+    vibes: vibes.map((v) => ({
+      id: v.id,
+      name: v.file.name,
+      url: v.url,
+      strength: v.strength,
+      info: v.info,
+    })),
+    onAddVibe: addVibe,
+    onRemoveVibe: removeVibe,
+    onUpdateVibe: updateVibe,
     setPrompt,
     setNegative,
     setModel,

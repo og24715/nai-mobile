@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/tabs";
 import { cn } from "cn";
 import { MODELS, SAMPLERS, SIZES } from "@/lib/options";
+import { modelCaps } from "@/lib/capabilities";
 import { MAX_CHARS, type CharPrompt } from "@/hooks/useCharacters";
 
 export interface FormState {
@@ -63,6 +64,20 @@ export interface FormState {
   noise: string;
   setStrength: (v: string) => void;
   setNoise: (v: string) => void;
+  // Reference images (improvements #44/#45): session state in
+  // MainPage (Files cannot persist). Vibe entries carry their
+  // encode parameters; the encoded strings themselves are cached
+  // in MainPage and never reach the form.
+  vibes: {
+    id: number;
+    name: string;
+    url: string;
+    strength: number;
+    info: number;
+  }[];
+  onAddVibe: (f: File) => void;
+  onRemoveVibe: (id: number) => void;
+  onUpdateVibe: (id: number, patch: { strength?: number; info?: number }) => void;
   setPrompt: (v: string) => void;
   setNegative: (v: string) => void;
   setModel: (v: string) => void;
@@ -85,7 +100,7 @@ function numOr(v: string, fallback: number): number {
 // modal needs less scrolling. The open set persists in localStorage
 // under "nai.accordion" (JSON array of section values); first-ever use
 // opens only the prompt section.
-const SECTION_VALUES = ["prompt", "settings", "characters"] as const;
+const SECTION_VALUES = ["prompt", "settings", "characters", "references"] as const;
 
 function loadOpenSections(): string[] {
   try {
@@ -116,6 +131,9 @@ export function GenerateForm({ form }: { form: FormState }) {
   const scaleNum = numOr(form.scale, 5);
   const strengthNum = numOr(form.strength, 0.7);
   const noiseNum = numOr(form.noise, 0);
+  // Reference-feature availability for the selected model
+  // (capability table in src/lib/capabilities.ts).
+  const caps = modelCaps(form.model);
   // On Opus, generations are free up to 28 steps; past that they
   // consume Anlas. The steps UI turns amber as the warning signal.
   const stepsOver = stepsNum > 28;
@@ -553,6 +571,107 @@ export function GenerateForm({ form }: { form: FormState }) {
                 ＋ キャラ追加
               </Button>
             )}
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+
+      <AccordionItem value="references">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold">
+          参照画像
+        </AccordionTrigger>
+        <AccordionContent>
+          <div className={sectionContentCls}>
+            {/* Vibe Transfer (improvement #44): 0–4 reference
+                images whose "vibe" steers the generation. Each
+                image is encoded once via /ai/encode-vibe (2 Anlas,
+                cached per file + model + information extracted in
+                MainPage) and sent as reference_image_multiple.
+                On models without the capability the block renders
+                inert with a note — it is never hidden. */}
+            <div>
+              <Label className={labelCls}>Vibe Transfer</Label>
+              {!caps.vibeTransfer && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  このモデルでは使えません
+                </p>
+              )}
+              <div
+                className={cn(
+                  "flex flex-col gap-[18px]",
+                  !caps.vibeTransfer && "pointer-events-none opacity-50",
+                )}
+                aria-disabled={!caps.vibeTransfer}
+              >
+                {form.vibes.map((v) => (
+                  <div key={v.id} className="flex flex-col gap-[18px]">
+                    <Attachment className="w-full">
+                      <AttachmentMedia variant="image">
+                        <img src={v.url} alt="" />
+                      </AttachmentMedia>
+                      <AttachmentContent>
+                        <AttachmentTitle>{v.name}</AttachmentTitle>
+                      </AttachmentContent>
+                      <AttachmentActions>
+                        <AttachmentAction
+                          aria-label="参照画像を外す"
+                          onClick={() => form.onRemoveVibe(v.id)}
+                        >
+                          <X />
+                        </AttachmentAction>
+                      </AttachmentActions>
+                    </Attachment>
+                    <div>
+                      <Label className={labelCls}>
+                        Strength{" "}
+                        <span className="text-lg font-semibold tabular-nums text-foreground">
+                          {v.strength.toFixed(2)}
+                        </span>
+                      </Label>
+                      <Slider
+                        value={[v.strength]}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        onValueChange={(val) => form.onUpdateVibe(v.id, { strength: Array.isArray(val) ? val[0] : val })}
+                      />
+                    </div>
+                    <div>
+                      <Label className={labelCls}>
+                        Information Extracted{" "}
+                        <span className="text-lg font-semibold tabular-nums text-foreground">
+                          {v.info.toFixed(2)}
+                        </span>
+                      </Label>
+                      <Slider
+                        value={[v.info]}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        onValueChange={(val) => form.onUpdateVibe(v.id, { info: Array.isArray(val) ? val[0] : val })}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {form.vibes.length < 4 && (
+                  <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
+                    ＋ 参照を追加
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) form.onAddVibe(f);
+                      }}
+                    />
+                  </label>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  エンコードに 2 Anlas/枚（初回のみ）
+                </p>
+              </div>
+            </div>
           </div>
         </AccordionContent>
       </AccordionItem>

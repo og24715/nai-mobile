@@ -20,6 +20,7 @@ const STATIC = path.join(ROOT, "dist");
 const PORT = Number(process.env.PORT) || 8196;
 const API_URL = "https://image.novelai.net/ai/generate-image";
 const UPSCALE_URL = "https://image.novelai.net/ai/upscale";
+const ENCODE_VIBE_URL = "https://image.novelai.net/ai/encode-vibe";
 const SUBSCRIPTION_URL = "https://image.novelai.net/user/subscription";
 const SUGGEST_URL = "https://image.novelai.net/ai/generate-image/suggest-tags";
 const UA = "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0";
@@ -38,6 +39,10 @@ interface GenInput {
   // image is PNG base64 (the client cover-crops/resizes it to the
   // selected generation size); strength / noise are 0..1.
   image?: string; strength?: number; noise?: number;
+  // Vibe Transfer (improvement #44): vibes already encoded via
+  // /api/encode-vibe on the client. Wired into the payload only
+  // for models whose capability flags allow it (see modelCaps).
+  vibes?: { encoded?: string; strength?: number; informationExtracted?: number }[];
 }
 
 function clamp01(v: number, fallback: number): number {
@@ -53,6 +58,19 @@ function paramsVersion(model: string): number {
   if (model.startsWith("nai-diffusion-5")) return 4;
   if (model.startsWith("nai-diffusion-4")) return 3;
   return 1;
+}
+
+// Per-model reference-feature availability — the server mirror of
+// src/lib/capabilities.ts (keep the two in sync; that file is the
+// documented single place to flip when V5 support lands):
+// Vibe Transfer on the V4 + V4.5 families, Precise Reference on
+// V4.5 only, both off for V5 and V3. buildPayload strips the
+// reference parameters for unsupported models even when the
+// client sends them.
+function modelCaps(model: string): { vibeTransfer: boolean; preciseReference: boolean } {
+  const v45 = model.startsWith("nai-diffusion-4-5");
+  const v4 = v45 || model.startsWith("nai-diffusion-4");
+  return { vibeTransfer: v4, preciseReference: v45 };
 }
 
 function buildPayload(g: GenInput) {
@@ -142,6 +160,19 @@ function buildPayload(g: GenInput) {
     parameters.strength = clamp01(Number(g.strength), 0.7);
     parameters.noise = clamp01(Number(g.noise), 0);
     if (seed != null) parameters.extra_noise_seed = seed;
+  }
+  // Vibe Transfer (improvement #44): the three parallel
+  // reference_*_multiple arrays, in entry order. For models
+  // without the capability the parameters are stripped — never
+  // sent upstream — even if the client sent encoded vibes.
+  const caps = modelCaps(model);
+  const vibes = (Array.isArray(g.vibes) ? g.vibes : [])
+    .filter((v) => v && typeof v.encoded === "string" && v.encoded.length > 0)
+    .slice(0, 4);
+  if (caps.vibeTransfer && vibes.length) {
+    parameters.reference_image_multiple = vibes.map((v) => String(v.encoded));
+    parameters.reference_strength_multiple = vibes.map((v) => clamp01(Number(v.strength), 0.6));
+    parameters.reference_information_extracted_multiple = vibes.map((v) => clamp01(Number(v.informationExtracted), 1));
   }
   return { payload: { input, model, action: isImg2Img ? "img2img" : "generate", parameters }, seed, model };
 }
@@ -771,6 +802,44 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(path.join(OUTPUTS, out), outPng);
       // Same item shape as /api/recent entries.
       sendJson(res, 200, { ok: true, item: { name: out, url: "outputs/" + encodeURIComponent(out) } }); return;
+    }
+    if (req.method === "POST" && p === "api/encode-vibe") {
+      // Vibe Transfer encoding (improvement #44): relay one
+      // device image to NovelAI's /ai/encode-vibe. The upstream
+      // contract (public OpenAPI schema, image.EncodeVibeRequest):
+      // JSON body { image (base64), model, information_extracted
+      // (0..1) }; the answer is 201 with an application/binary
+      // body — the vibe blob, which generation then takes
+      // base64-encoded in reference_image_multiple, so that is
+      // the form returned to the client. Costs 2 Anlas per encode
+      // upstream; the client caches per (file, model, info).
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      const body = JSON.parse((await readBody(req, 40_000_000)).toString("utf8")) as { image?: unknown; model?: unknown; informationExtracted?: unknown };
+      const image = typeof body.image === "string" ? body.image.replace(/^data:image\/[a-z+]+;base64,/i, "") : "";
+      if (!image) { sendJson(res, 400, { ok: false, error: "画像がありません" }); return; }
+      const model = typeof body.model === "string" && body.model ? body.model : "nai-diffusion-4-5-full";
+      const info = clamp01(Number(body.informationExtracted), 1);
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
+      let resp: Response;
+      try {
+        resp = await fetch(ENCODE_VIBE_URL, { method: "POST", signal: ctrl.signal,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": UA },
+          body: JSON.stringify({ image, model, information_extracted: info }) });
+      } catch (e) {
+        clearTimeout(timer);
+        sendJson(res, 500, { ok: false, error: String((e as Error)?.message || e) }); return;
+      }
+      clearTimeout(timer);
+      if (!resp.ok) {
+        const text = (await resp.text()).slice(0, 500);
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
+      }
+      const buf = Buffer.from(await resp.arrayBuffer());
+      if (!buf.length) { sendJson(res, 502, { ok: false, error: "API応答が空でした" }); return; }
+      sendJson(res, 200, { ok: true, vibe: buf.toString("base64") }); return;
     }
     if (req.method === "POST" && p === "api/generate") {
       // Token arrives per-request from the browser (localStorage) and is
