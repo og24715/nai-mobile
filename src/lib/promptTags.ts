@@ -354,57 +354,96 @@ export function findToken(value: string, cursor: number): TokenInfo {
   return { start, cursor: upto, query: value.slice(start, upto), prefix };
 }
 
-// --- Restore-time normalization (improvement #27) -----------------------
+// --- Import-time normalization (improvements #27 + #29) -----------------
 
-// Split multi-tag weighted sections into one canonical section per
-// tag: `0.8:: a, b ::` -> `0.8:: a ::, 0.8:: b ::`. Works at the
-// chunk level (same splitChunks / SECTION_RE grammar as the parser):
-// parsePrompt deliberately classifies a section whose inner list has
-// empty entries as raw, while restored prompts carry exactly those
-// (`0.8::, a, b, ::`), so they are handled here instead.
+// Rewrite weighted emphasis as one canonical section per tag:
+// `0.8:: a, b ::` -> `0.8:: a ::, 0.8:: b ::`.
 //
-// Rules: empty inner entries are dropped; a section left with no
-// tags disappears entirely; a section is only rewritten when ALL its
-// remaining inner tags are plain — any `{` / `}` / `[` / `]` or stray
-// `::` inside leaves the whole section byte-for-byte untouched
-// (legacy brackets are cumulative rightward operators, so splitting
-// them could change semantics). Plain tags and raw chunks keep their
-// exact original text. Used ONLY when restoring settings from an
-// image (#23); typing, localStorage loads and generation payloads
-// never pass through here.
+// #27 handled sections that close inside a single comma chunk, but
+// real-world prompts (artist mixes) mostly use a CHAINED style with
+// few or no closers:
+//
+//   .5:: a, .7:: b .9:: c, 0.55::, d, 0.8:: , e, f, ::, g
+//
+// so #29 reads the input as a stream instead: a weight opener
+// (`n::`) sets the current weight for everything after it until the
+// next opener or a bare `::` closer (which resets to 1); reaching
+// the end with a weight still open just ends the run. An opener with
+// an empty run still passes its weight on — `0.55::, d` weights `d`
+// at 0.55 (user-confirmed). Markers may appear mid-chunk
+// (`b .9:: c` splits into two tags at different weights), and a tag
+// name directly followed by a closer (`conto::`) is a tag at the
+// current weight, after which the weight resets.
+//
+// Tags are the pieces between commas and/or markers; each piece is
+// trimmed and empty pieces are dropped. Output joins the pieces with
+// ", " (stray newlines / extra whitespace flatten into the join),
+// emitting weight-1 pieces as plain tags and the rest as canonical
+// `w:: tag ::` sections. Weights render at their exact parsed value
+// (String(parseFloat)) rather than fmtWeight's 0.1 rounding, so a
+// deliberate 0.55 / 0.45 is not silently rewritten to 0.6 / 0.5.
+//
+// Safety gates — the input is returned completely unchanged when:
+//   - it contains any `{` / `}` / `[` / `]` anywhere (legacy brackets
+//     are cumulative rightward operators that interact with section
+//     boundaries, so stream rewriting is not semantics-safe), or
+//   - a bare `::` is glued to following text (`a::b`): that reads as
+//     literal tag content, not a delimiter, or
+//   - it contains no weight opener at all.
+// The rewrite is idempotent: running it on its own output is a no-op.
+//
+// Used ONLY at import time: restoring settings from an image (#23)
+// and paste import (#28). Typing, localStorage loads and generation
+// payloads never pass through here.
 export function splitWeightedSections(text: string): string {
   if (!text) return text;
-  const chunks = splitChunks(text);
-  const pieces: string[] = [];
-  let changed = false;
-  let firstFrom = -1; // chunk index that produced pieces[0]
-  chunks.forEach((body, ci) => {
-    const sm = body.trim().match(SECTION_RE);
-    if (sm) {
-      const tags = sm[2]
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s !== "");
-      if (tags.every((x) => !BRACE_RE.test(x) && !x.includes("::"))) {
-        changed = true;
-        if (tags.length === 0) return; // drop the empty section
-        const lead = body.slice(0, body.length - body.trimStart().length);
-        const w = fmtWeight(parseFloat(sm[1]));
-        tags.forEach((tag, i) => {
-          if (firstFrom === -1) firstFrom = ci;
-          pieces.push((i === 0 ? lead : " ") + `${w}:: ${tag} ::`);
-        });
-        return;
-      }
+  if (BRACE_RE.test(text)) return text;
+  const opener = new RegExp(`(${WEIGHT_SRC})::`, "y");
+  const pieces: { tag: string; weight: number }[] = [];
+  let weight = 1;
+  let sawOpener = false;
+  let buf = "";
+  const flush = () => {
+    const tag = buf.trim();
+    buf = "";
+    if (tag) pieces.push({ tag, weight });
+  };
+  let i = 0;
+  while (i < text.length) {
+    opener.lastIndex = i;
+    const m = opener.exec(text);
+    if (m) {
+      flush();
+      weight = parseFloat(m[1]);
+      sawOpener = true;
+      i += m[0].length;
+      continue;
     }
-    if (firstFrom === -1) firstFrom = ci;
-    pieces.push(body);
-  });
-  if (!changed) return text;
-  // When the original first chunk was dropped, the surviving first
-  // piece still carries the separator space that followed the comma.
-  if (firstFrom > 0 && pieces.length > 0) {
-    pieces[0] = pieces[0].replace(/^\s+/, "");
+    if (text.startsWith("::", i)) {
+      const after = text[i + 2];
+      if (after !== undefined && after !== "," && !/\s/.test(after)) {
+        return text; // `a::b` — literal colons inside a tag, bail out
+      }
+      flush();
+      weight = 1;
+      i += 2;
+      continue;
+    }
+    if (text[i] === ",") {
+      flush();
+      i++;
+      continue;
+    }
+    buf += text[i];
+    i++;
   }
-  return pieces.join(",");
+  flush();
+  if (!sawOpener) return text;
+  const fmtStreamWeight = (w: number) =>
+    Object.is(w, -0) ? "0" : String(w);
+  return pieces
+    .map((p) =>
+      p.weight === 1 ? p.tag : `${fmtStreamWeight(p.weight)}:: ${p.tag} ::`,
+    )
+    .join(", ");
 }
