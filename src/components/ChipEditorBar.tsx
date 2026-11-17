@@ -17,7 +17,10 @@ import type { ChipEditorState } from "@/components/TagField";
 // setChipText (in place for plain/single-tag chips, split-out for a
 // tag inside a multi-tag section, verbatim body replacement for raw
 // chunks; empty text deletes the chip). Raw chunks get ONLY that row
-// — no weight stepper, sign flip, or prefix selector.
+// — no weight stepper or prefix selector. There is no sign-flip
+// button (#33): the ±0.1 stepper moves the signed weight linearly
+// across zero (0.1 -> 0 -> -0.1 ...), so negative weights are
+// reached by stepping down.
 export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
   const effWeight = editor.weight;
   const [draft, setDraft] = useState(editor.text);
@@ -104,14 +107,6 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
             onClick={() => editor.onWeight(effWeight + 0.1)}
           >
             +0.1
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="h-tap px-3 text-sm"
-            onClick={() => editor.onWeight(effWeight === 0 ? -1 : -effWeight)}
-          >
-            {effWeight > 0 ? "マイナス化" : "プラス化"}
           </Button>
           {editor.character && (
             <select
