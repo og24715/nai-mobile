@@ -3,6 +3,8 @@
 export interface RecentItem {
   name: string;
   url: string;
+  // Favorites-store state (improvement #61).
+  favorite: boolean;
 }
 
 export interface GenerateRequest {
@@ -174,10 +176,74 @@ export async function fetchTagSuggestions(
   }
 }
 
-export async function fetchRecent(): Promise<RecentItem[]> {
+export interface RecentList {
+  items: RecentItem[];
+  // Whole-outputs/ totals (the items list itself is capped at
+  // 30): what the Delete-Others confirmation counts from.
+  total: number;
+  favoriteCount: number;
+}
+
+export async function fetchRecent(): Promise<RecentList> {
   const r = await fetch("api/recent");
   const j = await r.json();
-  return Array.isArray(j.items) ? (j.items as RecentItem[]) : [];
+  const items = Array.isArray(j.items) ? (j.items as RecentItem[]) : [];
+  return {
+    items,
+    total: typeof j.total === "number" ? j.total : items.length,
+    favoriteCount:
+      typeof j.favoriteCount === "number"
+        ? j.favoriteCount
+        : items.filter((i) => i.favorite).length,
+  };
+}
+
+export interface FavoriteResponse {
+  ok: boolean;
+  // The image's new state, in the same shape as /api/recent items.
+  item?: RecentItem;
+  error?: string;
+}
+
+// Set or clear one outputs/ image's favorite flag (improvement
+// #61). Only the file's name is sent; the server validates it
+// against the outputs/ listing and updates its store.
+export async function requestFavorite(
+  token: string,
+  name: string,
+  favorite: boolean,
+): Promise<{ status: number; json: FavoriteResponse }> {
+  const r = await fetch("api/favorite", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+    },
+    body: JSON.stringify({ name, favorite }),
+  });
+  return { status: r.status, json: (await r.json()) as FavoriteResponse };
+}
+
+export interface DeleteOthersResponse {
+  ok: boolean;
+  deleted?: number;
+  error?: string;
+}
+
+// Bulk-delete every outputs/ image that is NOT a favorite
+// (improvement #61). Returns how many files were deleted.
+export async function requestDeleteOthers(
+  token: string,
+): Promise<{ status: number; json: DeleteOthersResponse }> {
+  const r = await fetch("api/delete-others", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+    },
+    body: JSON.stringify({}),
+  });
+  return { status: r.status, json: (await r.json()) as DeleteOthersResponse };
 }
 
 export async function requestGenerate(

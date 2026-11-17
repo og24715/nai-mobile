@@ -12,8 +12,10 @@ import { usePersistedField } from "@/hooks/usePersistedField";
 import {
   fetchRecent,
   fetchSubscription,
+  requestDeleteOthers,
   requestEncodeVibe,
   requestEnhance,
+  requestFavorite,
   requestGenerate,
   requestUpscale,
   type GenerateRequest,
@@ -159,6 +161,11 @@ export default function MainPage() {
   const [heroUrl, setHeroUrl] = useState("");
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [items, setItems] = useState<RecentItem[]>([]);
+  // Whole-outputs/ totals behind the recent list (improvement
+  // #61): the Delete-Others confirmation counts from these, not
+  // from the 30 shown items.
+  const [recentMeta, setRecentMeta] = useState({ total: 0, favoriteCount: 0 });
+  const [deletingOthers, setDeletingOthers] = useState(false);
   const [status, setStatus] = useState<StatusState>({ kind: "", text: "" });
   const [generating, setGenerating] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
@@ -181,8 +188,9 @@ export default function MainPage() {
 
   const refreshRecent = useCallback(async () => {
     try {
-      const list = await fetchRecent();
+      const { items: list, total, favoriteCount } = await fetchRecent();
       setItems(list);
+      setRecentMeta({ total, favoriteCount });
       setHeroUrl(list.length ? list[0].url : "");
     } catch {
       /* leave the viewer as-is */
@@ -305,6 +313,78 @@ export default function MainPage() {
   const selectThumb = (url: string) => {
     setHeroUrl(url);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Favorites (improvement #61): the hero's state comes from the
+  // recent list (the hero always originates there). The toggle
+  // updates the UI optimistically and reconciles from the server
+  // (a full refresh) when the request fails.
+  const heroItem = items.find((i) => i.url === heroUrl);
+  const heroFavorite = !!heroItem?.favorite;
+
+  const toggleFavorite = async () => {
+    if (!heroUrl) return;
+    const token = readStored(TOKEN_KEY);
+    if (!token) {
+      location.replace("setup");
+      return;
+    }
+    const name = decodeURIComponent(heroUrl.split("/").pop() || "");
+    if (!name) return;
+    const next = !heroFavorite;
+    setItems((prev) =>
+      prev.map((i) => (i.name === name ? { ...i, favorite: next } : i)),
+    );
+    if (heroItem) {
+      setRecentMeta((m) => ({
+        ...m,
+        favoriteCount: m.favoriteCount + (next ? 1 : -1),
+      }));
+    }
+    try {
+      const { status: httpStatus, json: j } = await requestFavorite(token, name, next);
+      if (!j.ok) {
+        setStatus({ kind: "err", text: "Error: " + (j.error || httpStatus) });
+        void refreshRecent();
+      }
+    } catch (e) {
+      setStatus({ kind: "err", text: "Network error: " + e });
+      void refreshRecent();
+    }
+  };
+
+  // Delete Others (improvement #61): the server bulk-deletes
+  // every non-favorite in outputs/. The hero survives when it is
+  // a favorite; when it was deleted, fall back to the newest
+  // remaining image (or the empty state).
+  const deleteOthers = async () => {
+    const token = readStored(TOKEN_KEY);
+    if (!token) {
+      location.replace("setup");
+      return;
+    }
+    setDeletingOthers(true);
+    try {
+      const { status: httpStatus, json: j } = await requestDeleteOthers(token);
+      if (!j.ok) {
+        setStatus({ kind: "err", text: "Error: " + (j.error || httpStatus) });
+      } else {
+        try {
+          const { items: list, total, favoriteCount } = await fetchRecent();
+          setItems(list);
+          setRecentMeta({ total, favoriteCount });
+          if (!list.some((i) => i.url === heroUrl)) {
+            setHeroUrl(list.length ? list[0].url : "");
+          }
+        } catch {
+          /* keep the current list; the status still reports */
+        }
+        setStatus({ kind: "ok", text: `Deleted ${j.deleted ?? 0} images` });
+      }
+    } catch (e) {
+      setStatus({ kind: "err", text: "Network error: " + e });
+    }
+    setDeletingOthers(false);
   };
 
   // Upscale the hero image (improvements #39 + #41): the context
@@ -539,7 +619,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} />
+      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />

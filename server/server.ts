@@ -26,6 +26,7 @@ const SUGGEST_URL = "https://image.novelai.net/ai/generate-image/suggest-tags";
 const UA = "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0";
 const DATA_DIR = path.join(ROOT, "data");
 const PERSONAL_CACHE_FILE = path.join(DATA_DIR, "personal-tags.json");
+const FAVORITES_FILE = path.join(DATA_DIR, "favorites.json");
 
 fs.mkdirSync(OUTPUTS, { recursive: true });
 
@@ -404,6 +405,46 @@ function loadPersonalCounts(): Map<string, PersonalEntry> {
   return counts;
 }
 
+// --- Favorites (improvement #61) ----------------------------------------
+// The user marks the generations he likes as favorites; everything
+// else can then be bulk-deleted ("Delete Others"). The store is a
+// plain JSON array of output filenames in data/favorites.json
+// (gitignored with the rest of data/). Entries whose files have
+// disappeared are pruned whenever the store is read or written.
+function outputPngNames(): string[] {
+  try {
+    return fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"));
+  } catch {
+    return [];
+  }
+}
+
+function readFavorites(): string[] {
+  const listed = new Set(outputPngNames());
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(fs.readFileSync(FAVORITES_FILE, "utf8"));
+  } catch {
+    /* no store yet — no favorites */
+  }
+  const names = Array.isArray(raw)
+    ? raw.filter((x): x is string => typeof x === "string")
+    : [];
+  return [...new Set(names)].filter((n) => listed.has(n));
+}
+
+function writeFavorites(favs: string[]): string[] {
+  const listed = new Set(outputPngNames());
+  const clean = [...new Set(favs)].filter((n) => listed.has(n));
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(FAVORITES_FILE, JSON.stringify(clean));
+  } catch {
+    /* persistence is best-effort */
+  }
+  return clean;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", "http://localhost");
@@ -429,11 +470,17 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && p === "api/status") { sendJson(res, 200, { ok: true, port: PORT }); return; }
     if (req.method === "GET" && p === "api/recent") {
-      const items = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"))
+      // Each item carries its favorites-store state (improvement
+      // #61); total / favoriteCount cover the WHOLE outputs/
+      // listing (not just the 30 shown) so the client's
+      // Delete-Others confirmation can state exact numbers.
+      const favs = new Set(readFavorites());
+      const all = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"))
         .map((f) => ({ name: f, mtime: fs.statSync(path.join(OUTPUTS, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime).slice(0, 30)
-        .map((x) => ({ name: x.name, url: "outputs/" + encodeURIComponent(x.name) }));
-      sendJson(res, 200, { ok: true, items }); return;
+        .sort((a, b) => b.mtime - a.mtime);
+      const items = all.slice(0, 30)
+        .map((x) => ({ name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name) }));
+      sendJson(res, 200, { ok: true, items, total: all.length, favoriteCount: favs.size }); return;
     }
     if (req.method === "GET" && p === "api/subscription") {
       // Same relay pattern as generate: the browser's token arrives as
@@ -603,6 +650,49 @@ const server = http.createServer(async (req, res) => {
       const headers: Record<string, string> = { "Content-Type": "image/png", "Content-Length": String(data.length) };
       if (url.searchParams.get("download") === "1") headers["Content-Disposition"] = `attachment; filename="${name}"`;
       res.writeHead(200, headers); res.end(data); return;
+    }
+    if (req.method === "POST" && p === "api/favorite") {
+      // Favorites (improvement #61): set or clear one outputs/
+      // image's entry in the favorites store. Same per-request
+      // token gate as the other POST routes; the token is not
+      // used beyond the gate (a purely local operation).
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; favorite?: unknown };
+      const name = typeof body.name === "string" ? body.name : "";
+      // Same outputs/ exact-match validation as upscale/enhance —
+      // no path traversal is possible.
+      if (!name || !outputPngNames().includes(name)) { sendJson(res, 400, { ok: false, error: "Image not found" }); return; }
+      const fav = body.favorite === true;
+      const favs = readFavorites();
+      writeFavorites(fav ? [...favs, name] : favs.filter((n) => n !== name));
+      // Same item shape as /api/recent entries.
+      sendJson(res, 200, { ok: true, item: { name, url: "outputs/" + encodeURIComponent(name), favorite: fav } }); return;
+    }
+    if (req.method === "POST" && p === "api/delete-others") {
+      // Delete Others (improvement #61): bulk-delete every
+      // outputs/ PNG that is NOT a favorite. Only names taken
+      // from the directory listing itself are ever unlinked, so
+      // nothing outside outputs/ can be touched. Same token gate
+      // as the other POST routes.
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
+      await readBody(req); // no body fields; drained for symmetry
+      const favs = new Set(readFavorites());
+      let deleted = 0;
+      for (const name of outputPngNames()) {
+        if (favs.has(name)) continue;
+        try {
+          fs.unlinkSync(path.join(OUTPUTS, name));
+          deleted++;
+        } catch {
+          /* already gone — not counted */
+        }
+      }
+      writeFavorites([...favs]);
+      sendJson(res, 200, { ok: true, deleted }); return;
     }
     if (req.method === "POST" && p === "api/upscale") {
       // Upscale (improvements #39 + #41): relay one outputs/ image to
