@@ -39,9 +39,7 @@ export function FormModal({ open, onRequestClose, children }: Props) {
               ×
             </Button>
           </div>
-          <div className="mt-6 rounded-[20px] border border-border bg-card px-6 py-7">
-            {children}
-          </div>
+          <div className="mt-6">{children}</div>
           <p className="mt-8">
             <a
               href="setup"
