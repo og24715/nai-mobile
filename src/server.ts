@@ -44,7 +44,7 @@ function buildPayload(g: GenInput) {
     : Number(g.seed) >>> 0;
   const chars = (Array.isArray(g.characters) ? g.characters : [])
     .filter((c) => c && String(c.prompt || "").trim())
-    .slice(0, 2)
+    .slice(0, 6)
     .map((c) => ({ prompt: String(c.prompt).trim(), negative: String(c.negative || "").trim() }));
   const isV4 = V4_MODELS.has(model);
 
@@ -75,13 +75,14 @@ function buildPayload(g: GenInput) {
       parameters.sm = false; parameters.sm_dyn = false;
       parameters.dynamic_thresholding = false;
     }
-    const centers = [{ x: 0.3, y: 0.5 }, { x: 0.7, y: 0.5 }];
+    // Centers are auto-assigned evenly across the width: x = (i + 0.5) / n.
+    const centerAt = (i: number) => ({ x: (i + 0.5) / chars.length, y: 0.5 });
     parameters.v4_prompt = {
       caption: {
         base_caption: prompt,
         char_captions: chars.map((c, i) => ({
           char_caption: c.prompt,
-          centers: [chars.length === 1 ? { x: 0.5, y: 0.5 } : centers[i]],
+          centers: [centerAt(i)],
         })),
       },
       use_coords: chars.length > 0,
@@ -92,7 +93,7 @@ function buildPayload(g: GenInput) {
         base_caption: negative,
         char_captions: chars.map((c, i) => ({
           char_caption: c.negative || negative,
-          centers: [chars.length === 1 ? { x: 0.5, y: 0.5 } : centers[i]],
+          centers: [centerAt(i)],
         })),
       },
       legacy_uc: false,
@@ -100,7 +101,7 @@ function buildPayload(g: GenInput) {
     parameters.characterPrompts = chars.map((c, i) => ({
       prompt: c.prompt,
       uc: c.negative || negative,
-      center: chars.length === 1 ? { x: 0.5, y: 0.5 } : centers[i],
+      center: centerAt(i),
       enabled: true,
     }));
   }
@@ -136,6 +137,11 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 .modalfoot{margin-top:32px}
 .val{color:var(--text);font-weight:600}input[type=range]{padding:0;accent-color:var(--accent)}
 .hero{line-height:0}.hero img{width:100%;height:auto;display:block}
+.charblock{border:1px solid var(--border);border-radius:12px;padding:16px;margin-top:16px}
+.charhead{display:flex;justify-content:space-between;align-items:center}
+.charhead span{font-size:13px;color:var(--muted)}
+.charhead+label{margin-top:8px}
+.delbtn{width:36px;height:36px;min-height:36px;border-radius:50%;padding:0;margin:0;font-size:16px;line-height:1;background:var(--surface2);color:var(--text);border:1px solid var(--border)}
 </style></head><body>
 <div class="hero" id="heroWrap" hidden><a id="heroLink" href="" target="_blank" rel="noopener"><img id="heroImg" alt=""></a></div>
 <main>
@@ -173,21 +179,51 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <option value="ddim">DDIM</option>
 </select></div>
 <div><label>Seed（空=ランダム）</label><input type="number" id="seed" placeholder="random"></div></div>
-<label>キャラ1 プロンプト（V4以降）</label><textarea id="char1" style="min-height:48px"></textarea>
-<label>キャラ1 ネガティブ</label><input id="char1neg">
-<label>キャラ2 プロンプト</label><textarea id="char2" style="min-height:48px"></textarea>
-<label>キャラ2 ネガティブ</label><input id="char2neg">
+<label>キャラクタープロンプト（V4以降）</label>
+<div id="charList"></div>
+<button class="sub" id="addChar" type="button">＋ キャラ追加</button>
 <button id="gen" type="button">生成する</button>
 </div>
 <p class="modalfoot"><a class="settings" href="setup">⚙ 設定</a></p>
 </div></div>
 <script>
 const $=id=>document.getElementById(id);
-const fields=['prompt','negative','model','size','steps','scale','sampler','seed','char1','char1neg','char2','char2neg'];
+const fields=['prompt','negative','model','size','steps','scale','sampler','seed'];
 for(const f of fields){const v=localStorage.getItem('nai.'+f);if(v!==null&&$(f).tagName!=='SELECT'||v!==null&&$(f).value===''){} if(v!==null)$(f).value=v; $(f).addEventListener('change',()=>localStorage.setItem('nai.'+f,$(f).value));}
 function syncVal(id,vid,fmt){const el=$(id),s=$(vid);const f=()=>{s.textContent=fmt(Number(el.value));};el.addEventListener('input',f);el.addEventListener('input',()=>localStorage.setItem('nai.'+id,el.value));f();}
 syncVal('steps','stepsVal',v=>String(Math.round(v)));
 syncVal('scale','scaleVal',v=>v.toFixed(1));
+const MAXCHARS=6;let chars=[];
+function saveChars(){localStorage.setItem('nai.chars',JSON.stringify(chars));}
+function renderChars(){
+const wrap=$('charList');wrap.innerHTML='';
+chars.forEach((c,i)=>{
+const d=document.createElement('div');d.className='charblock';
+const head=document.createElement('div');head.className='charhead';
+const t=document.createElement('span');t.textContent='キャラ'+(i+1);
+const del=document.createElement('button');del.type='button';del.className='delbtn';del.textContent='×';del.setAttribute('aria-label','キャラ'+(i+1)+'を削除');
+del.onclick=()=>{chars.splice(i,1);saveChars();renderChars();};
+head.appendChild(t);head.appendChild(del);d.appendChild(head);
+const lp=document.createElement('label');lp.textContent='プロンプト';d.appendChild(lp);
+const tp=document.createElement('textarea');tp.style.minHeight='48px';tp.value=c.prompt;
+tp.addEventListener('input',()=>{chars[i].prompt=tp.value;saveChars();});
+d.appendChild(tp);
+const ln=document.createElement('label');ln.textContent='ネガティブ';d.appendChild(ln);
+const tn=document.createElement('input');tn.value=c.negative;
+tn.addEventListener('input',()=>{chars[i].negative=tn.value;saveChars();});
+d.appendChild(tn);
+wrap.appendChild(d);
+});
+$('addChar').style.display=chars.length>=MAXCHARS?'none':'';
+}
+function initChars(){
+try{const v=localStorage.getItem('nai.chars');if(v){const a=JSON.parse(v);if(Array.isArray(a)){chars=a.filter(c=>c&&typeof c==='object').slice(0,MAXCHARS).map(c=>({prompt:String(c.prompt||''),negative:String(c.negative||'')}));renderChars();return;}}}catch(e){}
+const old=[['char1','char1neg'],['char2','char2neg']].map(pair=>({prompt:localStorage.getItem('nai.'+pair[0])||'',negative:localStorage.getItem('nai.'+pair[1])||''}));
+chars=old.some(c=>c.prompt||c.negative)?old:[{prompt:'',negative:''}];
+saveChars();renderChars();
+}
+$('addChar').onclick=()=>{if(chars.length<MAXCHARS){chars.push({prompt:'',negative:''});saveChars();renderChars();}};
+initChars();
 function checkToken(){if(!localStorage.getItem('nai.token')){location.replace('setup');}}
 function setHero(url){if(!url){$('heroWrap').hidden=true;return;}$('heroImg').src=url;$('heroLink').href=url;$('heroWrap').hidden=false;}
 async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';setHero(j.items&&j.items.length?j.items[0].url:'');for(const it of j.items){const a=document.createElement('a');a.href=it.url;const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);a.addEventListener('click',e=>{e.preventDefault();setHero(it.url);window.scrollTo({top:0,behavior:'smooth'});});$('recent').appendChild(a);}}catch(e){}}
@@ -198,7 +234,7 @@ $('modalClose').onclick=closeModal;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 $('gen').onclick=async()=>{const token=localStorage.getItem('nai.token');if(!token){location.replace('setup');return;}closeModal();window.scrollTo(0,0);const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
 const [w,h]=$('size').value.split('x').map(Number);
-const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:[{prompt:$('char1').value,negative:$('char1neg').value},{prompt:$('char2').value,negative:$('char2neg').value}]};
+const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:chars.map(c=>({prompt:c.prompt,negative:c.negative}))};
 try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});const j=await r.json();
 if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.status);}
 else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);if(j.images&&j.images.length)setHero(j.images[0]);recent();}
