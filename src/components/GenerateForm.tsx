@@ -27,6 +27,7 @@ import {
   AttachmentActions,
   AttachmentContent,
   AttachmentDescription,
+  AttachmentGroup,
   AttachmentMedia,
   AttachmentTitle,
 } from "@/components/ui/attachment";
@@ -566,7 +567,11 @@ export function GenerateForm({ form }: { form: FormState }) {
                 cached per file + model + information extracted in
                 MainPage) and sent as reference_image_multiple.
                 On models without the capability the block renders
-                inert with a note — it is never hidden. */}
+                inert with a note — it is never hidden. Entries are
+                grouped in one AttachmentGroup laid out as a
+                2-column grid (#53), each cell keeping its own
+                sliders under its image, so several references read
+                as one set instead of a long stack. */}
             <div>
               <Label className={labelCls}>Vibe Transfer</Label>
               {!caps.vibeTransfer && (
@@ -581,8 +586,10 @@ export function GenerateForm({ form }: { form: FormState }) {
                 )}
                 aria-disabled={!caps.vibeTransfer}
               >
-                {form.vibes.map((v) => (
-                  <div key={v.id} className="flex flex-col gap-[18px]">
+                {form.vibes.length > 0 && (
+                  <AttachmentGroup className="grid grid-cols-2 gap-4 overflow-x-visible py-0">
+                    {form.vibes.map((v) => (
+                      <div key={v.id} className="flex min-w-0 flex-col gap-3">
                     <Attachment
                       orientation="vertical"
                       className="w-full has-data-[slot=attachment-content]:w-full"
@@ -632,8 +639,10 @@ export function GenerateForm({ form }: { form: FormState }) {
                         onValueChange={(val) => form.onUpdateVibe(v.id, { info: Array.isArray(val) ? val[0] : val })}
                       />
                     </div>
-                  </div>
-                ))}
+                      </div>
+                    ))}
+                  </AttachmentGroup>
+                )}
                 {form.vibes.length < 4 && (
                   <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
                     + Add Reference
@@ -664,7 +673,9 @@ export function GenerateForm({ form }: { form: FormState }) {
                 generation time and sent in the five
                 director_reference_* arrays; Fidelity is inverted
                 into the secondary strength on the server. Same
-                inert-with-note treatment on unsupported models. */}
+                inert-with-note treatment on unsupported models.
+                Entries are grouped in one AttachmentGroup laid out
+                as a 2-column grid (#53), like the Vibe block. */}
             <div>
               <Label className={labelCls}>Precise Reference</Label>
               {!caps.preciseReference && (
@@ -679,8 +690,10 @@ export function GenerateForm({ form }: { form: FormState }) {
                 )}
                 aria-disabled={!caps.preciseReference}
               >
-                {form.refs.map((r) => (
-                  <div key={r.id} className="flex flex-col gap-[18px]">
+                {form.refs.length > 0 && (
+                  <AttachmentGroup className="grid grid-cols-2 gap-4 overflow-x-visible py-0">
+                    {form.refs.map((r) => (
+                      <div key={r.id} className="flex min-w-0 flex-col gap-3">
                     <Attachment
                       orientation="vertical"
                       className="w-full has-data-[slot=attachment-content]:w-full"
@@ -749,8 +762,10 @@ export function GenerateForm({ form }: { form: FormState }) {
                         onValueChange={(val) => form.onUpdateRef(r.id, { fidelity: Array.isArray(val) ? val[0] : val })}
                       />
                     </div>
-                  </div>
-                ))}
+                      </div>
+                    ))}
+                  </AttachmentGroup>
+                )}
                 {form.refs.length < 4 && (
                   <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
                     + Add Reference
