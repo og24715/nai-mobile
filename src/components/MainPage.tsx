@@ -3,6 +3,7 @@ import { AllowanceBar } from "@/components/AllowanceBar";
 import { FabRow } from "@/components/FabRow";
 import { FormModal } from "@/components/FormModal";
 import { GenerateForm, type FormState } from "@/components/GenerateForm";
+import { RestoreDialog, type RestoreSelection } from "@/components/RestoreDialog";
 import { Viewer, type StatusState } from "@/components/Viewer";
 import { useCharacters } from "@/hooks/useCharacters";
 import { usePersistedField } from "@/hooks/usePersistedField";
@@ -15,7 +16,11 @@ import {
   type SubscriptionUsage,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
-import { mapSettingsToForm, readNaiSettings } from "@/lib/pngSettings";
+import {
+  mapSettingsToForm,
+  readNaiSettings,
+  type RestoredForm,
+} from "@/lib/pngSettings";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
 
 export default function MainPage() {
@@ -36,6 +41,9 @@ export default function MainPage() {
   const [status, setStatus] = useState<StatusState>({ kind: "", text: "" });
   const [generating, setGenerating] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  // Parsed settings from a picked device image, waiting for the
+  // user to choose which groups to import (improvement #31).
+  const [pendingRestore, setPendingRestore] = useState<RestoredForm | null>(null);
   // True while a history entry pushed by openModal is on the stack.
   const modalHist = useRef(false);
 
@@ -107,26 +115,35 @@ export default function MainPage() {
     }
   };
 
-  // Restore settings from a device image (improvement #23): parse
-  // the PNG's embedded NovelAI metadata locally, apply everything
-  // through the normal persisted setters, then open the drawer so
-  // the user can review before generating.
+  // Restore settings from a device image (improvements #23 + #31):
+  // parse the PNG's embedded NovelAI metadata locally, show the
+  // selection dialog, apply only the checked groups through the
+  // normal persisted setters, then open the drawer so the user can
+  // review before generating. Cancelling the dialog changes nothing.
   const restoreFromFile = async (file: File) => {
     const settings = await readNaiSettings(file).catch(() => null);
     if (!settings) {
       setStatus({ kind: "err", text: "この画像に設定が入っていません" });
       return;
     }
-    const r = mapSettingsToForm(settings, model);
-    if (r.prompt !== undefined) setPrompt(r.prompt);
-    if (r.negative !== undefined) setNegative(r.negative);
-    if (r.model !== undefined) setModel(r.model);
-    if (r.size !== undefined) setSize(r.size);
-    if (r.steps !== undefined) setSteps(r.steps);
-    if (r.scale !== undefined) setScale(r.scale);
-    if (r.sampler !== undefined) setSampler(r.sampler);
-    if (r.seed !== undefined) setSeed(r.seed);
-    if (r.chars !== undefined) updateChars(r.chars);
+    setPendingRestore(mapSettingsToForm(settings, model));
+  };
+
+  const applyRestore = (sel: RestoreSelection) => {
+    const r = pendingRestore;
+    if (!r) return;
+    if (sel.prompt && r.prompt !== undefined) setPrompt(r.prompt);
+    if (sel.negative && r.negative !== undefined) setNegative(r.negative);
+    if (sel.chars && r.chars !== undefined) updateChars(r.chars);
+    if (sel.settings) {
+      if (r.model !== undefined) setModel(r.model);
+      if (r.size !== undefined) setSize(r.size);
+      if (r.steps !== undefined) setSteps(r.steps);
+      if (r.scale !== undefined) setScale(r.scale);
+      if (r.sampler !== undefined) setSampler(r.sampler);
+    }
+    if (sel.seed && r.seed !== undefined) setSeed(r.seed);
+    setPendingRestore(null);
     setStatus({ kind: "ok", text: "画像から設定を復元しました" });
     openModal();
   };
@@ -208,6 +225,11 @@ export default function MainPage() {
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
       </FormModal>
+      <RestoreDialog
+        restored={pendingRestore}
+        onApply={applyRestore}
+        onCancel={() => setPendingRestore(null)}
+      />
     </>
   );
 }
