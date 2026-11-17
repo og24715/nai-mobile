@@ -15,6 +15,7 @@ import {
   type SubscriptionUsage,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
+import { mapSettingsToForm, readNaiSettings } from "@/lib/pngSettings";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
 
 export default function MainPage() {
@@ -106,6 +107,30 @@ export default function MainPage() {
     }
   };
 
+  // Restore settings from a device image (improvement #23): parse
+  // the PNG's embedded NovelAI metadata locally, apply everything
+  // through the normal persisted setters, then open the drawer so
+  // the user can review before generating.
+  const restoreFromFile = async (file: File) => {
+    const settings = await readNaiSettings(file).catch(() => null);
+    if (!settings) {
+      setStatus({ kind: "err", text: "この画像に設定が入っていません" });
+      return;
+    }
+    const r = mapSettingsToForm(settings, model);
+    if (r.prompt !== undefined) setPrompt(r.prompt);
+    if (r.negative !== undefined) setNegative(r.negative);
+    if (r.model !== undefined) setModel(r.model);
+    if (r.size !== undefined) setSize(r.size);
+    if (r.steps !== undefined) setSteps(r.steps);
+    if (r.scale !== undefined) setScale(r.scale);
+    if (r.sampler !== undefined) setSampler(r.sampler);
+    if (r.seed !== undefined) setSeed(r.seed);
+    if (r.chars !== undefined) updateChars(r.chars);
+    setStatus({ kind: "ok", text: "画像から設定を復元しました" });
+    openModal();
+  };
+
   const selectThumb = (url: string) => {
     setHeroUrl(url);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -177,7 +202,7 @@ export default function MainPage() {
   return (
     <>
       {usage && <AllowanceBar usage={usage} />}
-      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} />
+      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
