@@ -127,7 +127,9 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.grid img{width:100%;height:auto;display:block;border-radius:12px}
 .hint{font-size:12px;color:var(--muted)}
 .settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
-.fab{position:fixed;right:20px;bottom:20px;width:60px;height:60px;min-height:60px;border-radius:50%;padding:0;margin:0;font-size:24px;line-height:1;box-shadow:0 6px 20px rgba(0,0,0,.5);z-index:40}
+.fabrow{position:fixed;right:20px;bottom:20px;display:flex;gap:12px;z-index:40}
+.fab{width:60px;height:60px;min-height:60px;border-radius:50%;padding:0;margin:0;font-size:24px;line-height:1;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.fab.edit{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
 .modal{display:none;position:fixed;inset:0;margin:0;background:var(--bg);overflow-y:auto;z-index:50}
 .modal.open{display:block}
 .modal-inner{max-width:640px;margin:0 auto;padding:20px 20px 64px}
@@ -148,7 +150,7 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <div class="status" id="status"></div>
 <section><h2>最近の生成</h2><div class="grid" id="recent"></div></section>
 </main>
-<button class="fab" id="fab" type="button" aria-label="生成フォームを開く">✎</button>
+<div class="fabrow"><button class="fab" id="genFab" type="button" aria-label="生成する">▶</button><button class="fab edit" id="fab" type="button" aria-label="生成フォームを開く">✎</button></div>
 <div class="modal" id="modal"><div class="modal-inner">
 <div class="modalhead"><h2>生成</h2><button class="closebtn" id="modalClose" type="button" aria-label="閉じる">×</button></div>
 <div class="card">
@@ -182,7 +184,6 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <label>キャラクタープロンプト（V4以降）</label>
 <div id="charList"></div>
 <button class="sub" id="addChar" type="button">＋ キャラ追加</button>
-<button id="gen" type="button">生成する</button>
 </div>
 <p class="modalfoot"><a class="settings" href="setup">⚙ 設定</a></p>
 </div></div>
@@ -232,14 +233,14 @@ function closeModal(){$('modal').classList.remove('open');document.body.style.ov
 $('fab').onclick=openModal;
 $('modalClose').onclick=closeModal;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
-$('gen').onclick=async()=>{const token=localStorage.getItem('nai.token');if(!token){location.replace('setup');return;}closeModal();window.scrollTo(0,0);const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
+$('genFab').onclick=async()=>{const token=localStorage.getItem('nai.token');if(!token){location.replace('setup');return;}closeModal();window.scrollTo(0,0);const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('genFab').disabled=true;
 const [w,h]=$('size').value.split('x').map(Number);
 const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:chars.map(c=>({prompt:c.prompt,negative:c.negative}))};
 try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});const j=await r.json();
 if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.status);}
 else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);if(j.images&&j.images.length)setHero(j.images[0]);recent();}
 }catch(e){st.className='status err';st.textContent='通信エラー: '+e;}
-$('gen').disabled=false;};
+$('genFab').disabled=false;};
 checkToken();recent();
 </script></body></html>`;
 
