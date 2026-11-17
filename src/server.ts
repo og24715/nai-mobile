@@ -1,24 +1,20 @@
 // nai-mobile: phone-friendly front for the NovelAI image API.
 // TypeScript / Node built-in http + global fetch. Only dep: fflate (zip).
-// Token is stored ONLY on this PC in token.txt (mode 600) and is never
-// returned by any endpoint (only { hasToken: boolean }).
+// The NovelAI token is stored ONLY in the user's browser (localStorage,
+// key "nai.token") and is sent per generate request as an Authorization
+// header. The server keeps nothing: it uses the token in memory for that
+// single request and never writes it to disk or logs it.
 import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import { unzipSync } from "fflate";
 
 const ROOT = path.join(__dirname, "..");
-const TOKEN_FILE = path.join(ROOT, "token.txt");
 const OUTPUTS = path.join(ROOT, "outputs");
 const PORT = 8196;
 const API_URL = "https://image.novelai.net/ai/generate-image";
 
 fs.mkdirSync(OUTPUTS, { recursive: true });
-
-function readToken(): string {
-  try { return fs.readFileSync(TOKEN_FILE, "utf8").trim(); } catch { return ""; }
-}
-function hasToken(): boolean { return readToken().length > 10; }
 
 interface CharInput { prompt?: string; negative?: string }
 interface GenInput {
@@ -192,7 +188,7 @@ for(const f of fields){const v=localStorage.getItem('nai.'+f);if(v!==null&&$(f).
 function syncVal(id,vid,fmt){const el=$(id),s=$(vid);const f=()=>{s.textContent=fmt(Number(el.value));};el.addEventListener('input',f);el.addEventListener('input',()=>localStorage.setItem('nai.'+id,el.value));f();}
 syncVal('steps','stepsVal',v=>String(Math.round(v)));
 syncVal('scale','scaleVal',v=>v.toFixed(1));
-async function checkToken(){try{const r=await fetch('api/status');const j=await r.json();if(!j.hasToken){location.replace('setup');}}catch(e){}}
+function checkToken(){if(!localStorage.getItem('nai.token')){location.replace('setup');}}
 function setHero(url){if(!url){$('heroWrap').hidden=true;return;}$('heroImg').src=url;$('heroLink').href=url;$('heroWrap').hidden=false;}
 async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';setHero(j.items&&j.items.length?j.items[0].url:'');for(const it of j.items){const a=document.createElement('a');a.href=it.url;const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);a.addEventListener('click',e=>{e.preventDefault();setHero(it.url);window.scrollTo({top:0,behavior:'smooth'});});$('recent').appendChild(a);}}catch(e){}}
 function openModal(){$('modal').classList.add('open');document.body.style.overflow='hidden';}
@@ -200,10 +196,10 @@ function closeModal(){$('modal').classList.remove('open');document.body.style.ov
 $('fab').onclick=openModal;
 $('modalClose').onclick=closeModal;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
-$('gen').onclick=async()=>{closeModal();window.scrollTo(0,0);const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
+$('gen').onclick=async()=>{const token=localStorage.getItem('nai.token');if(!token){location.replace('setup');return;}closeModal();window.scrollTo(0,0);const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
 const [w,h]=$('size').value.split('x').map(Number);
 const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:[{prompt:$('char1').value,negative:$('char1neg').value},{prompt:$('char2').value,negative:$('char2neg').value}]};
-try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();
+try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});const j=await r.json();
 if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.status);}
 else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);if(j.images&&j.images.length)setHero(j.images[0]);recent();}
 }catch(e){st.className='status err';st.textContent='通信エラー: '+e;}
@@ -228,22 +224,26 @@ button.sub{background:var(--surface2);color:var(--text);border:1px solid var(--b
 .hint{font-size:12px;color:var(--muted)}
 .settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
 </style></head><body><main>
-<header><h1>トークン設定</h1><p class="lead">NovelAI の Persistent API Token をこのPCに保存します</p></header>
+<header><h1>トークン設定</h1><p class="lead">NovelAI の Persistent API Token をこのブラウザに保存します</p></header>
 
 <section><div class="card">
 <h2>APIトークン</h2>
 <p class="hint" id="tokenState">確認中…</p>
-<label>Persistent API Token（このPCにだけ保存されます）</label>
+<label>Persistent API Token（このブラウザの localStorage にだけ保存されます）</label>
 <input type="password" id="token" autocomplete="off" placeholder="pst-...">
 <button class="sub" id="saveToken" type="button">トークンを保存</button>
+<button class="sub" id="clearToken" type="button">トークンを削除</button>
+<p class="hint">サーバーには一切保存されません。生成のたびにこのブラウザから送信され、サーバーは中継にだけ使います。</p>
+<p class="hint">保存はブラウザ／URL（オリジン）ごとです。別のブラウザや別の URL から使うときは再入力が必要で、ブラウザのデータを消すと再入力が必要になります。</p>
 <p class="hint">取得: novelai.net → Account Settings → Get Persistent API Token。チャットには送らないでください。</p>
 <p style="margin-top:24px"><a class="settings" href="./">← 生成画面へ戻る</a></p>
 </div></section>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-async function status(){try{const r=await fetch('api/status');const j=await r.json();$('tokenState').textContent=j.hasToken?'保存済みトークン: あり（差し替える場合は新しいトークンを保存）':'保存済みトークン: なし';}catch(e){}}
-$('saveToken').onclick=async()=>{const t=$('token').value.trim();if(!t){alert('トークンが空です');return;}try{const r=await fetch('api/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});const j=await r.json();if(j.ok){location.replace('./');}else alert(j.error||'保存失敗');}catch(e){alert('通信エラー: '+e);}};
+function status(){const has=!!localStorage.getItem('nai.token');$('tokenState').textContent=has?'保存済みトークン: あり（差し替える場合は新しいトークンを保存）':'保存済みトークン: なし';}
+$('saveToken').onclick=()=>{const t=$('token').value.trim();if(!t){alert('トークンが空です');return;}localStorage.setItem('nai.token',t);location.replace('./');};
+$('clearToken').onclick=()=>{localStorage.removeItem('nai.token');$('token').value='';status();};
 status();
 </script></body></html>`;
 
@@ -275,15 +275,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Length": body.length });
       res.end(body); return;
     }
-    if (req.method === "GET" && p === "api/status") { sendJson(res, 200, { ok: true, hasToken: hasToken(), port: PORT }); return; }
-    if (req.method === "POST" && p === "api/token") {
-      const j = JSON.parse((await readBody(req)).toString("utf8")) as { token?: string };
-      const t = String(j.token || "").trim();
-      if (t.length < 10) { sendJson(res, 400, { ok: false, error: "トークンが短すぎます" }); return; }
-      fs.writeFileSync(TOKEN_FILE, t + "\n", { mode: 0o600 });
-      try { fs.chmodSync(TOKEN_FILE, 0o600); } catch {}
-      sendJson(res, 200, { ok: true, hasToken: true }); return;
-    }
+    if (req.method === "GET" && p === "api/status") { sendJson(res, 200, { ok: true, port: PORT }); return; }
     if (req.method === "GET" && p === "api/recent") {
       const items = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"))
         .map((f) => ({ name: f, mtime: fs.statSync(path.join(OUTPUTS, f)).mtimeMs }))
@@ -301,8 +293,11 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, headers); res.end(data); return;
     }
     if (req.method === "POST" && p === "api/generate") {
-      const token = readToken();
-      if (!token) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。設定ページから Persistent API Token を保存してください。" }); return; }
+      // Token arrives per-request from the browser (localStorage) and is
+      // used only in memory for this one upstream call. Never persisted.
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
       const g = JSON.parse((await readBody(req)).toString("utf8")) as GenInput;
       if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "プロンプトが空です" }); return; }
       const { payload, seed } = buildPayload(g);
@@ -315,6 +310,7 @@ const server = http.createServer(async (req, res) => {
       } finally { clearTimeout(timer); }
       if (!resp.ok) {
         const text = (await resp.text()).slice(0, 500);
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
         sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
       }
       const zip = new Uint8Array(await resp.arrayBuffer());
