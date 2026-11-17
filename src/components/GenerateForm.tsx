@@ -205,9 +205,15 @@ export function GenerateForm({ form }: { form: FormState }) {
         }}
       />
     </label>
+    {/* Section headers stick to the top of the drawer scroll area
+        (improvement #57, custom CSS — shadcn has no built-in
+        support): each trigger's header is sticky with an opaque
+        background matching the drawer surface and its own hairline
+        divider, so an open section's title stays visible while its
+        content scrolls, until the next section pushes it away. */}
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
           Prompt
         </AccordionTrigger>
         <AccordionContent>
@@ -246,7 +252,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="settings">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
           Settings
         </AccordionTrigger>
         <AccordionContent>
@@ -484,7 +490,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="characters">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
           Characters
           <span className="ml-1.5 text-xs font-normal text-muted-foreground">
             (V4 and up)
@@ -556,7 +562,7 @@ export function GenerateForm({ form }: { form: FormState }) {
       </AccordionItem>
 
       <AccordionItem value="references">
-        <AccordionTrigger className="py-3.5 text-xl font-semibold">
+        <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-0 z-20 border-b border-border bg-background">
           Reference Images
         </AccordionTrigger>
         <AccordionContent>
