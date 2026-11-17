@@ -129,6 +129,27 @@ export default function MainPage() {
     setPendingRestore(mapSettingsToForm(settings, model));
   };
 
+  // Restore settings from the history image currently shown as the
+  // hero (improvement #10): fetch the file from the app's own
+  // outputs/ serving path (the same URL the <img> uses) and feed it
+  // through the exact same parse flow as a device-picked file, so
+  // the mapping and the selection dialog are fully shared.
+  const restoreFromHero = async () => {
+    if (!heroUrl) return;
+    let file: File;
+    try {
+      const r = await fetch(heroUrl);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      const name = decodeURIComponent(heroUrl.split("/").pop() || "image.png");
+      file = new File([blob], name, { type: blob.type || "image/png" });
+    } catch (e) {
+      setStatus({ kind: "err", text: "通信エラー: " + e });
+      return;
+    }
+    await restoreFromFile(file);
+  };
+
   const applyRestore = (sel: RestoreSelection) => {
     const r = pendingRestore;
     if (!r) return;
@@ -220,7 +241,7 @@ export default function MainPage() {
   return (
     <>
       {usage && <AllowanceBar usage={usage} />}
-      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} />
+      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />

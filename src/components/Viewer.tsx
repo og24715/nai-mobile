@@ -12,12 +12,13 @@ interface Props {
   items: RecentItem[];
   onSelect: (url: string) => void;
   onRestoreFile: (f: File) => void;
+  onRestoreHero: () => void;
 }
 
 // Main screen: full-bleed hero image on top, status line, and the
 // recent-generations thumbnail grid. Tapping a thumbnail swaps the
 // hero; tapping the hero opens the original in a new tab.
-export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile }: Props) {
+export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero }: Props) {
   return (
     <>
       {heroUrl && (
@@ -37,10 +38,12 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile }: Prop
         >
           {status.text}
         </div>
-        {/* Restore the form settings from a NovelAI PNG saved on this
-            device (improvement #23). The file is parsed locally in
-            the browser; nothing is uploaded. */}
-        <div className="mt-1">
+        {/* Two ways to restore the form settings from a NovelAI PNG:
+            from a file saved on this device (improvement #23), or from
+            the history image currently shown as the hero (improvement
+            #10). Both run through the same local parse + selection
+            dialog; nothing is uploaded. */}
+        <div className="mt-1 flex flex-wrap items-center gap-1">
           <label className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
             画像から復元
             <input
@@ -54,6 +57,15 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile }: Prop
               }}
             />
           </label>
+          {heroUrl && (
+            <button
+              type="button"
+              onClick={onRestoreHero}
+              className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              この画像から復元
+            </button>
+          )}
         </div>
         <section className="mb-14">
           <h2 className="mb-3 text-lg font-semibold">最近の生成</h2>
