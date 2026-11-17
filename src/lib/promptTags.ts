@@ -77,9 +77,17 @@ export function parsePrompt(input: string): Segment[] {
   });
 }
 
+// Render a weight at its exact value (improvement #30): 0.55 stays
+// "0.55" and 2 stays "2". An earlier version of this helper rounded
+// to 0.1, which silently rewrote a deliberate 0.55 to 0.6 whenever
+// an edit re-rendered its section. The parseFloat(w.toFixed(10))
+// round-trip only trims floating-point noise from stepper
+// arithmetic (0.65000000000000002 -> "0.65"); real values are not
+// rounded at any practical precision. Shared by the serializer, the
+// chip badges / editor bar, and splitWeightedSections below.
 export function fmtWeight(w: number): string {
-  const r = Math.round(w * 10) / 10;
-  return Object.is(r, -0) ? "0" : String(r);
+  if (w === 0 || Object.is(w, -0)) return "0";
+  return String(parseFloat(w.toFixed(10)));
 }
 
 function coreOf(seg: Segment): string {
@@ -137,8 +145,12 @@ export interface EditResult {
   select?: { seg: number; tag: number };
 }
 
+// The stepper adds ±0.1 to the chip's CURRENT exact weight (0.55 ->
+// 0.65), so this must not snap to a 0.1 grid — Math.round(w * 10) / 10
+// would turn 0.65 into 0.7 (improvement #30). It only clamps to the
+// ±10 soft bound and trims floating-point noise, like fmtWeight.
 const clampWeight = (w: number) =>
-  Math.max(-10, Math.min(10, Math.round(w * 10) / 10));
+  parseFloat(Math.max(-10, Math.min(10, w)).toFixed(10));
 
 // Set one chip's weight. Plain tag -> its own weighted section (or no
 // change at exactly 1). Single-tag section -> weight updated in place
@@ -380,8 +392,8 @@ export function findToken(value: string, cursor: number): TokenInfo {
 // ", " (stray newlines / extra whitespace flatten into the join),
 // emitting weight-1 pieces as plain tags and the rest as canonical
 // `w:: tag ::` sections. Weights render at their exact parsed value
-// (String(parseFloat)) rather than fmtWeight's 0.1 rounding, so a
-// deliberate 0.55 / 0.45 is not silently rewritten to 0.6 / 0.5.
+// (the shared fmtWeight, #30), so a deliberate 0.55 / 0.45 is not
+// silently rewritten to 0.6 / 0.5.
 //
 // Safety gates — the input is returned completely unchanged when:
 //   - it contains any `{` / `}` / `[` / `]` anywhere (legacy brackets
@@ -439,11 +451,9 @@ export function splitWeightedSections(text: string): string {
   }
   flush();
   if (!sawOpener) return text;
-  const fmtStreamWeight = (w: number) =>
-    Object.is(w, -0) ? "0" : String(w);
   return pieces
     .map((p) =>
-      p.weight === 1 ? p.tag : `${fmtStreamWeight(p.weight)}:: ${p.tag} ::`,
+      p.weight === 1 ? p.tag : `${fmtWeight(p.weight)}:: ${p.tag} ::`,
     )
     .join(", ");
 }
