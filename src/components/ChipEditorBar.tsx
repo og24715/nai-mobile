@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "cn";
-import { fmtWeight } from "@/lib/promptTags";
 import type { ChipEditorState } from "@/components/TagField";
 
 // The shared chip editor bar (improvements #21 + #26 + #28).
@@ -16,13 +14,13 @@ import type { ChipEditorState } from "@/components/TagField";
 // field holding the chip's own text: Enter or ✓ applies it through
 // setChipText (in place for plain/single-tag chips, split-out for a
 // tag inside a multi-tag section, verbatim body replacement for raw
-// chunks; empty text deletes the chip). Raw chunks get ONLY that row
-// — no weight stepper or prefix selector. There is no sign-flip
-// button (#33): the ±0.1 stepper moves the signed weight linearly
-// across zero (0.1 -> 0 -> -0.1 ...), so negative weights are
-// reached by stepping down.
+// chunks; empty text deletes the chip). Character fields additionally
+// get the source#/target#/mutual# prefix selector. Raw chunks get
+// ONLY the text row — no prefix selector. Weight is NOT adjusted
+// here anymore (#34): each chip carries its own [−][+] step zones,
+// which move the signed weight linearly across zero, so negative
+// weights are reached by stepping down on the chip itself.
 export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
-  const effWeight = editor.weight;
   const [draft, setDraft] = useState(editor.text);
   // Re-seed the draft when a different chip is selected (or the same
   // chip's text changed through another action). Typing never touches
@@ -82,47 +80,21 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
           <X size={16} />
         </Button>
       </div>
-      {!editor.raw && (
+      {!editor.raw && editor.character && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            variant="secondary"
-            className="h-tap px-3 text-sm"
-            onClick={() => editor.onWeight(effWeight - 0.1)}
+          <select
+            aria-label="接頭辞"
+            value={editor.prefix ?? ""}
+            onChange={(e) =>
+              editor.onPrefix(e.target.value === "" ? null : e.target.value)
+            }
+            className="h-tap rounded-md border border-input bg-background px-1.5 text-sm"
           >
-            −0.1
-          </Button>
-          <span
-            className={cn(
-              "min-w-11 text-center text-tag font-semibold",
-              effWeight < 0 && "text-err",
-            )}
-          >
-            ×{fmtWeight(effWeight)}
-          </span>
-          <Button
-            type="button"
-            variant="secondary"
-            className="h-tap px-3 text-sm"
-            onClick={() => editor.onWeight(effWeight + 0.1)}
-          >
-            +0.1
-          </Button>
-          {editor.character && (
-            <select
-              aria-label="接頭辞"
-              value={editor.prefix ?? ""}
-              onChange={(e) =>
-                editor.onPrefix(e.target.value === "" ? null : e.target.value)
-              }
-              className="h-tap rounded-md border border-input bg-background px-1.5 text-sm"
-            >
-              <option value="">接頭辞なし</option>
-              <option value="source">source#</option>
-              <option value="target">target#</option>
-              <option value="mutual">mutual#</option>
-            </select>
-          )}
+            <option value="">接頭辞なし</option>
+            <option value="source">source#</option>
+            <option value="target">target#</option>
+            <option value="mutual">mutual#</option>
+          </select>
         </div>
       )}
     </div>

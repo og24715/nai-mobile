@@ -110,7 +110,7 @@ export function GenerateForm({ form }: { form: FormState }) {
   // --- Lifted chip selection + shared editor bar (improvement #26) ----
   // The selected chip lives here, not inside TagField, so ONE editor
   // bar can be rendered stuck to the bottom of the drawer scroll area:
-  // with many tags the weight controls stay reachable without
+  // with many tags the editor controls stay reachable without
   // scrolling to the field's own inline bar. Each TagField reports a
   // ChipEditorState snapshot for its selected chip; re-reports whose
   // display fields are unchanged are ignored (the snapshot's actions
@@ -139,7 +139,6 @@ export function GenerateForm({ form }: { form: FormState }) {
           prev &&
           prev.fieldId === ed.fieldId &&
           prev.text === ed.text &&
-          prev.weight === ed.weight &&
           prev.raw === ed.raw &&
           prev.character === ed.character &&
           prev.prefix === ed.prefix
@@ -418,7 +417,7 @@ export function GenerateForm({ form }: { form: FormState }) {
 
     {/* Shared chip editor bar: stuck to the bottom of the drawer
         scroll area (above the ⚙ footer in FormModal) while any chip
-        is selected, so the weight controls are reachable without
+        is selected, so the editor controls are reachable without
         scrolling however many tags the field has. The wrapper's extra
         bottom padding while it is visible lets the last chips scroll
         clear of the bar. */}

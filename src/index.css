@@ -57,6 +57,9 @@
     --text-suggest: 1.0625rem;
     /* Minimum tap target (44px, the Apple HIG / Material guideline). */
     --spacing-tap: 2.75rem;
+    /* Width of a chip's on-chip −/+ step zone (improvement #34):
+       the step zones share the tap height but can be narrower. */
+    --spacing-stepper: 2rem;
 }
 
 :root {

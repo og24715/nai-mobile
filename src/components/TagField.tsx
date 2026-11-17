@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Minus, Plus } from "lucide-react";
 import { cn } from "cn";
 import {
   deleteChip,
@@ -10,6 +11,7 @@ import {
   setChipText,
   setChipWeight,
   splitPrefix,
+  type Chip,
 } from "@/lib/promptTags";
 import { fetchTagSuggestions, type TagSuggestion } from "@/lib/api";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
@@ -28,11 +30,9 @@ export interface ChipSel {
 export interface ChipEditorState {
   fieldId: string;
   text: string;
-  weight: number; // effective weight (1 for a plain tag)
   raw: boolean;
   character: boolean;
   prefix: string | null;
-  onWeight: (w: number) => void;
   onText: (t: string) => void;
   onDelete: () => void;
   onPrefix: (p: string | null) => void;
@@ -66,11 +66,14 @@ function fmtCount(n: number): string {
 // A prompt field edited ONLY through its tag chips (improvements #21,
 // #26, #28): the chips plus an inline "add tag" input with the
 // suggestion strip (#22) are the whole editing UI — there is no
-// free-text textarea anymore. A chip's own text is edited in the
-// shared editor bar (see ChipEditorBar / setChipText). The field's
-// string value remains the single source of truth: chips are derived
-// from it on every render, and every edit rewrites it through the
-// same setter, so persistence and generation payloads are untouched.
+// free-text textarea anymore. Weight stepping lives ON the chips
+// themselves (#34): each non-raw chip is a [−][label][+] button
+// group. A chip's own text is edited in the shared editor bar (see
+// ChipEditorBar / setChipText), which also holds the prefix selector
+// and delete. The field's string value remains the single source of
+// truth: chips are derived from it on every render, and every edit
+// rewrites it through the same setter, so persistence and generation
+// payloads are untouched.
 export function TagField({
   fieldId,
   value,
@@ -88,7 +91,6 @@ export function TagField({
   const selChip = sel
     ? chips.find((c) => c.seg === sel.seg && c.tag === sel.tag)
     : undefined;
-  const effWeight = selChip ? (selChip.weight ?? 1) : 1;
   const selPrefix = selChip ? splitPrefix(selChip.text).prefix : null;
 
   // --- Suggestions (add-tag input only) --------------------------------
@@ -189,12 +191,28 @@ export function TagField({
   );
 
   // --- Chip editor (state lifted to GenerateForm, #26) ------------------
-  const applyWeight = (w: number) => {
-    if (!selChip) return;
-    const r = setChipWeight(segs, selChip.seg, selChip.tag, w);
-    if (r.segs !== segs) {
-      onChange(serializePrompt(r.segs));
-      if (r.select) onChipSelect(fieldId, r.select);
+  // --- On-chip weight stepping (improvement #34) -----------------------
+  // The −/+ zones of a chip step its weight directly through
+  // setChipWeight — the editor bar is not involved. Selection is only
+  // adjusted when the indices move: the stepped chip itself is
+  // followed to its (possibly split-out) position so an open bar
+  // stays on it, and a selection pointing into/after a section that
+  // split is shifted to keep pointing at the same tag.
+  const stepChip = (c: Chip, delta: number) => {
+    const r = setChipWeight(segs, c.seg, c.tag, (c.weight ?? 1) + delta);
+    if (r.segs === segs) return;
+    onChange(serializePrompt(r.segs));
+    if (!sel) return;
+    if (sel.seg === c.seg && sel.tag === c.tag) {
+      onChipSelect(fieldId, r.select ?? null);
+    } else if (r.segs.length !== segs.length) {
+      if (sel.seg === c.seg && sel.tag > c.tag) {
+        // Same section: the selected tag stays in the remaining
+        // section, one index earlier now that c.tag left it.
+        onChipSelect(fieldId, { seg: sel.seg, tag: sel.tag - 1 });
+      } else if (sel.seg > c.seg) {
+        onChipSelect(fieldId, { seg: sel.seg + 1, tag: sel.tag });
+      }
     }
   };
   const applyText = (t: string) => {
@@ -222,9 +240,9 @@ export function TagField({
 
   // The reported snapshot's actions delegate to the latest closures so
   // the shared bar never acts on stale segments.
-  const actionsRef = useRef({ applyWeight, applyText, applyDelete, applyPrefix });
+  const actionsRef = useRef({ applyText, applyDelete, applyPrefix });
   useEffect(() => {
-    actionsRef.current = { applyWeight, applyText, applyDelete, applyPrefix };
+    actionsRef.current = { applyText, applyDelete, applyPrefix };
   });
 
   const hasSel = !!selChip;
@@ -235,11 +253,9 @@ export function TagField({
       onChipEditor(fieldId, {
         fieldId,
         text: selChip.text,
-        weight: effWeight,
         raw: selChip.raw,
         character: !!character,
         prefix: selPrefix,
-        onWeight: (w) => actionsRef.current.applyWeight(w),
         onText: (t) => actionsRef.current.applyText(t),
         onDelete: () => actionsRef.current.applyDelete(),
         onPrefix: (p) => actionsRef.current.applyPrefix(p),
@@ -253,7 +269,7 @@ export function TagField({
     // stable ref-delegating wrappers, and GenerateForm ignores
     // re-reports whose display fields are unchanged.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldId, hasSel, selText, selRaw, effWeight, selPrefix, character]);
+  }, [fieldId, hasSel, selText, selRaw, selPrefix, character]);
 
   return (
     <div>
@@ -262,34 +278,88 @@ export function TagField({
         {chips.map((c) => {
           const active = !!sel && sel.seg === c.seg && sel.tag === c.tag;
           const neg = (c.weight ?? 1) < 0;
+          if (c.raw) {
+            // Raw chunks (brace/bracket syntax) have no weight to
+            // step: a plain chip that only opens the bar's text
+            // editing, as before.
+            return (
+              <button
+                key={`${c.seg}:${c.tag}`}
+                type="button"
+                onClick={() =>
+                  onChipSelect(fieldId, active ? null : { seg: c.seg, tag: c.tag })
+                }
+                className={cn(
+                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-tag leading-snug",
+                  "border-dashed text-muted-foreground",
+                  active && "border-primary ring-1 ring-primary",
+                )}
+              >
+                <span className="truncate">{c.text}</span>
+              </button>
+            );
+          }
+          // Non-raw chips are a joined [−][label][+] button group
+          // (improvement #34): the −/+ zones step the weight in
+          // place; the label between them selects the chip and opens
+          // the editor bar (text / prefix / delete). Hand-rolled
+          // rather than shadcn's ButtonGroup: that component styles
+          // each button's own border and corner radius, which fights
+          // this single-pill design (one container border, group-wide
+          // active/negative states, truncating label).
           return (
-            <button
+            <div
               key={`${c.seg}:${c.tag}`}
-              type="button"
-              onClick={() =>
-                onChipSelect(fieldId, active ? null : { seg: c.seg, tag: c.tag })
-              }
+              role="group"
+              aria-label={c.text}
               className={cn(
-                "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-tag leading-snug",
-                c.raw
-                  ? "border-dashed text-muted-foreground"
-                  : "border-border bg-card",
-                neg && "border-err/50 text-err",
+                "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",
+                neg ? "divide-err/30 border-err/50 text-err" : "divide-border border-border",
                 active && "border-primary ring-1 ring-primary",
               )}
             >
-              <span className="truncate">{c.text}</span>
-              {c.weight !== null && (
-                <span
-                  className={cn(
-                    "shrink-0 text-tag-badge font-semibold",
-                    neg ? "text-err" : "text-muted-foreground",
-                  )}
-                >
-                  ×{fmtWeight(c.weight)}
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                aria-label={`${c.text} の重みを下げる`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  stepChip(c, -0.1);
+                }}
+                className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+              >
+                <Minus size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onChipSelect(fieldId, active ? null : { seg: c.seg, tag: c.tag })
+                }
+                className="flex min-w-0 touch-manipulation items-center gap-1.5 px-1.5 text-tag leading-snug"
+              >
+                <span className="truncate">{c.text}</span>
+                {c.weight !== null && (
+                  <span
+                    className={cn(
+                      "shrink-0 text-tag-badge font-semibold",
+                      neg ? "text-err" : "text-muted-foreground",
+                    )}
+                  >
+                    ×{fmtWeight(c.weight)}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                aria-label={`${c.text} の重みを上げる`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  stepChip(c, 0.1);
+                }}
+                className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+              >
+                <Plus size={18} />
+              </button>
+            </div>
           );
         })}
         <input
