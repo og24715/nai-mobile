@@ -299,3 +299,58 @@ export function findToken(value: string, cursor: number): TokenInfo {
   }
   return { start, cursor: upto, query: value.slice(start, upto), prefix };
 }
+
+// --- Restore-time normalization (improvement #27) -----------------------
+
+// Split multi-tag weighted sections into one canonical section per
+// tag: `0.8:: a, b ::` -> `0.8:: a ::, 0.8:: b ::`. Works at the
+// chunk level (same splitChunks / SECTION_RE grammar as the parser):
+// parsePrompt deliberately classifies a section whose inner list has
+// empty entries as raw, while restored prompts carry exactly those
+// (`0.8::, a, b, ::`), so they are handled here instead.
+//
+// Rules: empty inner entries are dropped; a section left with no
+// tags disappears entirely; a section is only rewritten when ALL its
+// remaining inner tags are plain — any `{` / `}` / `[` / `]` or stray
+// `::` inside leaves the whole section byte-for-byte untouched
+// (legacy brackets are cumulative rightward operators, so splitting
+// them could change semantics). Plain tags and raw chunks keep their
+// exact original text. Used ONLY when restoring settings from an
+// image (#23); typing, localStorage loads and generation payloads
+// never pass through here.
+export function splitWeightedSections(text: string): string {
+  if (!text) return text;
+  const chunks = splitChunks(text);
+  const pieces: string[] = [];
+  let changed = false;
+  let firstFrom = -1; // chunk index that produced pieces[0]
+  chunks.forEach((body, ci) => {
+    const sm = body.trim().match(SECTION_RE);
+    if (sm) {
+      const tags = sm[2]
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s !== "");
+      if (tags.every((x) => !BRACE_RE.test(x) && !x.includes("::"))) {
+        changed = true;
+        if (tags.length === 0) return; // drop the empty section
+        const lead = body.slice(0, body.length - body.trimStart().length);
+        const w = fmtWeight(parseFloat(sm[1]));
+        tags.forEach((tag, i) => {
+          if (firstFrom === -1) firstFrom = ci;
+          pieces.push((i === 0 ? lead : " ") + `${w}:: ${tag} ::`);
+        });
+        return;
+      }
+    }
+    if (firstFrom === -1) firstFrom = ci;
+    pieces.push(body);
+  });
+  if (!changed) return text;
+  // When the original first chunk was dropped, the surviving first
+  // piece still carries the separator space that followed the comma.
+  if (firstFrom > 0 && pieces.length > 0) {
+    pieces[0] = pieces[0].replace(/^\s+/, "");
+  }
+  return pieces.join(",");
+}

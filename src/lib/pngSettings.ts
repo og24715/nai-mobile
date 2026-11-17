@@ -6,6 +6,7 @@
 // File.arrayBuffer() and the chunks are walked locally. No upload,
 // no new dependencies.
 import { MODELS, SAMPLERS, SIZES } from "@/lib/options";
+import { splitWeightedSections } from "@/lib/promptTags";
 import type { CharPrompt } from "@/hooks/useCharacters";
 
 export interface NaiImageSettings {
@@ -145,17 +146,21 @@ function mapChars(params: Record<string, unknown>): CharPrompt[] | undefined {
   if (Array.isArray(caps)) {
     const ncaps = v4n?.caption?.char_captions;
     return caps.slice(0, 6).map((c, i) => ({
-      prompt: str(c?.char_caption) ?? "",
-      negative:
+      prompt: splitWeightedSections(str(c?.char_caption) ?? ""),
+      negative: splitWeightedSections(
         (Array.isArray(ncaps) ? str(ncaps[i]?.char_caption) : undefined) ??
-        "",
+          "",
+      ),
     }));
   }
   const legacy = params.characterPrompts;
   if (Array.isArray(legacy)) {
     return legacy.slice(0, 6).map((c) => {
       const o = (c ?? {}) as { prompt?: unknown; uc?: unknown };
-      return { prompt: str(o.prompt) ?? "", negative: str(o.uc) ?? "" };
+      return {
+        prompt: splitWeightedSections(str(o.prompt) ?? ""),
+        negative: splitWeightedSections(str(o.uc) ?? ""),
+      };
     });
   }
   return undefined;
@@ -167,10 +172,13 @@ export function mapSettingsToForm(
 ): RestoredForm {
   const p = settings.params;
   const out: RestoredForm = {};
+  // Restored prompts are normalized (improvement #27): multi-tag
+  // weighted sections are split into one section per tag. This runs
+  // only on this restore path, never on typed/stored prompts.
   const prompt = str(p.prompt);
-  if (prompt !== undefined) out.prompt = prompt;
+  if (prompt !== undefined) out.prompt = splitWeightedSections(prompt);
   const negative = str(p.uc);
-  if (negative !== undefined) out.negative = negative;
+  if (negative !== undefined) out.negative = splitWeightedSections(negative);
   const steps = numStr(p.steps);
   if (steps !== undefined) out.steps = steps;
   const scale = numStr(p.scale);
