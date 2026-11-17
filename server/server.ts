@@ -20,6 +20,10 @@ const STATIC = path.join(ROOT, "dist");
 const PORT = Number(process.env.PORT) || 8196;
 const API_URL = "https://image.novelai.net/ai/generate-image";
 const SUBSCRIPTION_URL = "https://image.novelai.net/user/subscription";
+const SUGGEST_URL = "https://image.novelai.net/ai/generate-image/suggest-tags";
+const UA = "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0";
+const DATA_DIR = path.join(ROOT, "data");
+const PERSONAL_CACHE_FILE = path.join(DATA_DIR, "personal-tags.json");
 
 fs.mkdirSync(OUTPUTS, { recursive: true });
 
@@ -143,6 +147,179 @@ function readBody(req: http.IncomingMessage): Promise<Buffer> {
   });
 }
 
+// --- PNG text chunks ---------------------------------------------------
+// NovelAI PNGs carry their generation parameters in a tEXt "Comment"
+// chunk (JSON). Used by the personal-tag aggregation below (and by the
+// seed recovery in the generate handler).
+function extractPngText(buf: Buffer): Map<string, string> | null {
+  if (
+    buf.length < 8 ||
+    buf[0] !== 0x89 ||
+    buf[1] !== 0x50 ||
+    buf[2] !== 0x4e ||
+    buf[3] !== 0x47
+  ) {
+    return null;
+  }
+  const out = new Map<string, string>();
+  let i = 8;
+  while (i + 8 <= buf.length) {
+    const len = buf.readUInt32BE(i);
+    const type = buf.toString("latin1", i + 4, i + 8);
+    const dataStart = i + 8;
+    if (dataStart + len > buf.length) break;
+    if (type === "tEXt") {
+      const nul = buf.indexOf(0, dataStart);
+      if (nul > dataStart && nul < dataStart + len) {
+        const key = buf.toString("latin1", dataStart, nul);
+        if (!out.has(key)) {
+          out.set(key, buf.toString("utf8", nul + 1, dataStart + len));
+        }
+      }
+    }
+    if (type === "IEND") break;
+    i = dataStart + len + 4;
+  }
+  return out;
+}
+
+// --- Personal tags (improvement #22) ------------------------------------
+// Tags the user actually generates with, aggregated from the Comment
+// metadata of outputs/*.png (main prompt, UC, and every character
+// caption). Cached in memory + data/personal-tags.json, rebuilt when
+// the outputs directory changes (file count / newest mtime signature).
+interface PersonalEntry {
+  display: string;
+  count: number;
+}
+let personalState: { sig: string; counts: Map<string, PersonalEntry> } | null =
+  null;
+
+function normalizeTagKey(s: string): string {
+  return s.toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function collectTagsFromPrompt(
+  text: string,
+  counts: Map<string, PersonalEntry>,
+) {
+  // Weighted-section markers are stripped (the bare tags inside count),
+  // braces/brackets dropped, and source#/target#/mutual# prefixes
+  // removed so suggestions offer the bare tag.
+  const cleaned = text
+    .replace(/-?(?:\d+(?:\.\d+)?|\.\d+)::/g, ",")
+    .replace(/::/g, ",")
+    .replace(/[{}[\]]/g, "");
+  for (const piece of cleaned.split(",")) {
+    const tag = piece.trim().replace(/^(source|target|mutual)#/, "");
+    if (!tag || tag.length > 80) continue;
+    const key = normalizeTagKey(tag);
+    if (!key) continue;
+    const cur = counts.get(key);
+    if (cur) cur.count++;
+    else counts.set(key, { display: tag, count: 1 });
+  }
+}
+
+function promptStringsFromComment(c: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const capStrings = (block: unknown) => {
+    const cap = (block as { caption?: unknown } | null)?.caption as
+      | { base_caption?: unknown; char_captions?: unknown }
+      | undefined;
+    if (!cap) return;
+    if (typeof cap.base_caption === "string") out.push(cap.base_caption);
+    if (Array.isArray(cap.char_captions)) {
+      for (const cc of cap.char_captions) {
+        const t = (cc as { char_caption?: unknown } | null)?.char_caption;
+        if (typeof t === "string") out.push(t);
+      }
+    }
+  };
+  if (c.v4_prompt || c.v4_negative_prompt) {
+    // prompt/uc duplicate the v4 base captions, so read captions only.
+    capStrings(c.v4_prompt);
+    capStrings(c.v4_negative_prompt);
+  } else {
+    if (typeof c.prompt === "string") out.push(c.prompt);
+    if (typeof c.uc === "string") out.push(c.uc);
+  }
+  if (Array.isArray(c.characterPrompts)) {
+    for (const cp of c.characterPrompts) {
+      const o = cp as { prompt?: unknown; uc?: unknown } | null;
+      if (typeof o?.prompt === "string") out.push(o.prompt);
+      if (typeof o?.uc === "string") out.push(o.uc);
+    }
+  }
+  return out;
+}
+
+function outputsSignature(): string {
+  try {
+    const names = fs
+      .readdirSync(OUTPUTS)
+      .filter((f) => f.toLowerCase().endsWith(".png"));
+    let max = 0;
+    for (const n of names) {
+      const m = fs.statSync(path.join(OUTPUTS, n)).mtimeMs;
+      if (m > max) max = m;
+    }
+    return `${names.length}:${Math.round(max)}`;
+  } catch {
+    return "0:0";
+  }
+}
+
+function loadPersonalCounts(): Map<string, PersonalEntry> {
+  const sig = outputsSignature();
+  if (personalState && personalState.sig === sig) return personalState.counts;
+  try {
+    const j = JSON.parse(fs.readFileSync(PERSONAL_CACHE_FILE, "utf8")) as {
+      sig?: string;
+      counts?: Record<string, PersonalEntry>;
+    };
+    if (j && j.sig === sig && j.counts) {
+      personalState = { sig, counts: new Map(Object.entries(j.counts)) };
+      return personalState.counts;
+    }
+  } catch {
+    /* no usable cache — rebuild below */
+  }
+  const counts = new Map<string, PersonalEntry>();
+  let names: string[] = [];
+  try {
+    names = fs
+      .readdirSync(OUTPUTS)
+      .filter((f) => f.toLowerCase().endsWith(".png"));
+  } catch {
+    /* no outputs yet */
+  }
+  for (const name of names) {
+    try {
+      const texts = extractPngText(fs.readFileSync(path.join(OUTPUTS, name)));
+      const comment = texts?.get("Comment");
+      if (!comment) continue;
+      const parsed = JSON.parse(comment) as Record<string, unknown>;
+      for (const s of promptStringsFromComment(parsed)) {
+        collectTagsFromPrompt(s, counts);
+      }
+    } catch {
+      /* skip an unreadable PNG */
+    }
+  }
+  personalState = { sig, counts };
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(
+      PERSONAL_CACHE_FILE,
+      JSON.stringify({ sig, counts: Object.fromEntries(counts) }),
+    );
+  } catch {
+    /* cache persistence is best-effort */
+  }
+  return counts;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", "http://localhost");
@@ -209,6 +386,123 @@ const server = http.createServer(async (req, res) => {
         ? { percent: Number(data.usage.percent) || 0, isNegative: !!data.usage.isNegative }
         : null;
       sendJson(res, 200, { tier: typeof data.tier === "number" ? data.tier : null, active: !!data.active, anlasTotal, usage }); return;
+    }
+    if (req.method === "GET" && p === "api/tags") {
+      // Tag suggestions (improvement #22): NovelAI's official
+      // suggest-tags endpoint, relayed with the browser's token (same
+      // in-memory-only pattern as /api/subscription), merged with the
+      // user's personal tags from outputs/ metadata. Personal matches
+      // come first (marked with their usage count as "mine"); official
+      // results keep their returned order. Without a token — or if the
+      // official call fails — personal matches alone are returned; the
+      // endpoint never errors the UI.
+      const q = (url.searchParams.get("q") || "").trim();
+      const model =
+        url.searchParams.get("model") || "nai-diffusion-4-5-full";
+      const limit = Math.min(
+        20,
+        Math.max(1, Number(url.searchParams.get("limit")) || 10),
+      );
+      interface TagItem {
+        name: string;
+        count: number | null;
+        confidence: number | null;
+        mine: number;
+      }
+      const items: TagItem[] = [];
+      if (q) {
+        const counts = loadPersonalCounts();
+        const qKey = normalizeTagKey(q);
+        const byKey = new Map<string, TagItem>();
+        if (qKey) {
+          const personal = [...counts.entries()]
+            .filter(([key]) => key.startsWith(qKey))
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, limit);
+          for (const [key, v] of personal) {
+            const item: TagItem = {
+              name: v.display,
+              count: null,
+              confidence: null,
+              mine: v.count,
+            };
+            items.push(item);
+            byKey.set(key, item);
+          }
+        }
+        const auth = String(req.headers.authorization || "");
+        const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+        if (token.length >= 10 && items.length < limit) {
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 10_000);
+            const resp = await fetch(
+              `${SUGGEST_URL}?model=${encodeURIComponent(model)}&prompt=${encodeURIComponent(q)}&lang=en`,
+              {
+                signal: ctrl.signal,
+                headers: { Authorization: `Bearer ${token}`, "User-Agent": UA },
+              },
+            );
+            clearTimeout(timer);
+            if (resp.ok) {
+              // The OpenAPI schema types the response's "tags" field
+              // ambiguously (a singular $ref), so accept an array, a
+              // single object, or a bare item defensively.
+              const data: unknown = await resp.json();
+              let list: unknown[] = [];
+              if (Array.isArray(data)) list = data;
+              else if (data && typeof data === "object") {
+                const tags = (data as { tags?: unknown }).tags;
+                if (Array.isArray(tags)) list = tags;
+                else if (tags && typeof tags === "object") list = [tags];
+                else if (typeof (data as { tag?: unknown }).tag === "string") {
+                  list = [data];
+                }
+              }
+              for (const raw of list) {
+                const it = raw as {
+                  tag?: unknown;
+                  name?: unknown;
+                  count?: unknown;
+                  confidence?: unknown;
+                } | null;
+                const name =
+                  typeof it?.tag === "string"
+                    ? it.tag
+                    : typeof it?.name === "string"
+                      ? it.name
+                      : "";
+                if (!name) continue;
+                const key = normalizeTagKey(name);
+                const existing = byKey.get(key);
+                if (existing) {
+                  // Already shown as a personal tag: enrich it with
+                  // the official count/confidence instead of duping.
+                  if (typeof it?.count === "number") existing.count = it.count;
+                  if (typeof it?.confidence === "number") {
+                    existing.confidence = it.confidence;
+                  }
+                  continue;
+                }
+                const item: TagItem = {
+                  name,
+                  count: typeof it?.count === "number" ? it.count : null,
+                  confidence:
+                    typeof it?.confidence === "number" ? it.confidence : null,
+                  mine: counts.get(key)?.count ?? 0,
+                };
+                items.push(item);
+                byKey.set(key, item);
+                if (items.length >= limit) break;
+              }
+            }
+          } catch {
+            /* official suggestions are best-effort */
+          }
+        }
+      }
+      sendJson(res, 200, { ok: true, items });
+      return;
     }
     if (req.method === "GET" && p.startsWith("outputs/")) {
       const name = path.basename(decodeURIComponent(p.slice("outputs/".length)));

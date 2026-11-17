@@ -132,6 +132,8 @@ export function GenerateForm({ form }: { form: FormState }) {
               </TabsList>
               <TabsContent value="positive">
                 <TagField
+                  suggest
+                  model={form.model}
                   id="prompt"
                   placeholder="1girl, ..."
                   className="min-h-[84px] text-base"
@@ -141,6 +143,8 @@ export function GenerateForm({ form }: { form: FormState }) {
               </TabsContent>
               <TabsContent value="negative">
                 <TagField
+                  suggest
+                  model={form.model}
                   id="negative"
                   className="min-h-[56px] text-base"
                   value={form.negative}
@@ -319,6 +323,8 @@ export function GenerateForm({ form }: { form: FormState }) {
                   </TabsList>
                   <TabsContent value="positive">
                     <TagField
+                      suggest
+                      model={form.model}
                       character
                       className="min-h-[48px] text-base"
                       value={c.prompt}
@@ -327,6 +333,8 @@ export function GenerateForm({ form }: { form: FormState }) {
                   </TabsContent>
                   <TabsContent value="negative">
                     <TagField
+                      suggest
+                      model={form.model}
                       character
                       className="min-h-[44px] text-base"
                       value={c.negative}

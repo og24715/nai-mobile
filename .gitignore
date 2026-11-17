@@ -3,3 +3,4 @@ dist/
 dist-server/
 outputs/*.png
 nai-mobile.service
+data/

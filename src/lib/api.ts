@@ -64,6 +64,37 @@ export async function fetchSubscription(
   }
 }
 
+export interface TagSuggestion {
+  name: string;
+  count: number | null;
+  confidence: number | null;
+  // How often the user has used this tag in past generations (0 =
+  // not a personal tag).
+  mine: number;
+}
+
+// Tag suggestions from the server (official NovelAI suggestions
+// merged with the user's personal tags). Returns [] on any failure —
+// the suggestion strip simply doesn't appear.
+export async function fetchTagSuggestions(
+  token: string,
+  q: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<TagSuggestion[]> {
+  try {
+    const r = await fetch(
+      `api/tags?q=${encodeURIComponent(q)}&model=${encodeURIComponent(model)}`,
+      { headers: { Authorization: `Bearer ${token}` }, signal },
+    );
+    if (!r.ok) return [];
+    const j = await r.json();
+    return Array.isArray(j.items) ? (j.items as TagSuggestion[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchRecent(): Promise<RecentItem[]> {
   const r = await fetch("api/recent");
   const j = await r.json();

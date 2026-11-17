@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "cn";
 import {
   deleteChip,
+  findToken,
   fmtWeight,
   listChips,
   parsePrompt,
@@ -13,6 +14,8 @@ import {
   setChipWeight,
   splitPrefix,
 } from "@/lib/promptTags";
+import { fetchTagSuggestions, type TagSuggestion } from "@/lib/api";
+import { TOKEN_KEY, readStored } from "@/lib/storage";
 
 interface Props {
   id?: string;
@@ -22,12 +25,21 @@ interface Props {
   className?: string;
   // Character prompt fields get the source#/target#/mutual# selector.
   character?: boolean;
+  // Tag suggestions (improvement #22): needs the selected model for
+  // the official suggest-tags relay.
+  suggest?: boolean;
+  model?: string;
 }
 
-// A prompt textarea with a tag chip editor under it (improvement #21).
-// The textarea text is the single source of truth: chips are derived
-// from the current value on every render, and chip edits rewrite the
-// value through the same setter the textarea uses, so persistence and
+function fmtCount(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+// A prompt textarea with a tag chip editor under it (improvement #21)
+// and a tag suggestion strip while typing (improvement #22). The
+// textarea text is the single source of truth: chips are derived from
+// the current value on every render, and chip edits rewrite the value
+// through the same setter the textarea uses, so persistence and
 // generation payloads are untouched.
 export function TagField({
   id,
@@ -36,6 +48,8 @@ export function TagField({
   placeholder,
   className,
   character,
+  suggest,
+  model,
 }: Props) {
   const [sel, setSel] = useState<{ seg: number; tag: number } | null>(null);
   const segs = useMemo(() => parsePrompt(value), [value]);
@@ -45,6 +59,61 @@ export function TagField({
     : undefined;
   const effWeight = selChip ? (selChip.weight ?? 1) : 1;
 
+  // --- Suggestions ------------------------------------------------------
+  const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
+  const elRef = useRef<HTMLTextAreaElement | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const queryRef = useRef("");
+
+  const scheduleSuggest = (text: string, cursor: number) => {
+    if (!suggest) return;
+    const token = findToken(text, cursor);
+    queryRef.current = token.query;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (token.query.length < 2 || /[:{}[\]]/.test(token.query)) {
+      setSuggestions([]);
+      return;
+    }
+    const q = token.query;
+    debounceRef.current = setTimeout(() => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      void fetchTagSuggestions(
+        readStored(TOKEN_KEY) ?? "",
+        q,
+        model ?? "",
+        ctrl.signal,
+      ).then((list) => {
+        // Drop stale responses: only show results for the token the
+        // user is still typing.
+        if (queryRef.current === q) setSuggestions(list.slice(0, 8));
+      });
+    }, 250);
+  };
+
+  const applySuggestion = (s: TagSuggestion) => {
+    const el = elRef.current;
+    const cursor = el?.selectionStart ?? value.length;
+    const token = findToken(value, cursor);
+    const before = value.slice(0, token.start);
+    const after = value.slice(cursor);
+    const insert = token.prefix + s.name;
+    // Don't stack a second comma when one already follows the cursor.
+    const sep = after.startsWith(",") ? "" : ", ";
+    const next = before + insert + sep + after;
+    onChange(next);
+    setSuggestions([]);
+    queryRef.current = "";
+    const pos = (before + insert + sep).length;
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+    });
+  };
+
+  // --- Chip editor --------------------------------------------------------
   const applyWeight = (w: number) => {
     if (!selChip) return;
     const r = setChipWeight(segs, selChip.seg, selChip.tag, w);
@@ -73,12 +142,55 @@ export function TagField({
         className={className}
         value={value}
         onChange={(e) => {
+          elRef.current = e.currentTarget;
           onChange(e.target.value);
           // Indices may shift under a manual edit; drop the selection
           // rather than risk acting on the wrong tag.
           setSel(null);
+          scheduleSuggest(e.target.value, e.currentTarget.selectionStart ?? 0);
+        }}
+        onSelect={(e) => {
+          elRef.current = e.currentTarget;
+          scheduleSuggest(value, e.currentTarget.selectionStart ?? 0);
+        }}
+        onKeyUp={(e) => {
+          elRef.current = e.currentTarget;
+          scheduleSuggest(value, e.currentTarget.selectionStart ?? 0);
+        }}
+        onClick={(e) => {
+          elRef.current = e.currentTarget;
+        }}
+        onBlur={() => {
+          // Small delay so a tap on a suggestion lands first (the
+          // buttons also preventDefault on pointer down).
+          setTimeout(() => setSuggestions([]), 150);
         }}
       />
+
+      {suggestions.length > 0 && (
+        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+          {suggestions.map((s) => (
+            <button
+              key={s.name}
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                applySuggestion(s);
+              }}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1.5 text-xs whitespace-nowrap"
+            >
+              <span>{s.name}</span>
+              {s.mine > 0 ? (
+                <span className="font-medium text-primary">よく使う</span>
+              ) : s.count !== null ? (
+                <span className="text-muted-foreground">
+                  {fmtCount(s.count)}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      )}
 
       {chips.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
