@@ -190,7 +190,7 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 <script>
 const $=id=>document.getElementById(id);
 const fields=['prompt','negative','model','size','steps','scale','sampler','seed'];
-for(const f of fields){const v=localStorage.getItem('nai.'+f);if(v!==null&&$(f).tagName!=='SELECT'||v!==null&&$(f).value===''){} if(v!==null)$(f).value=v; $(f).addEventListener('change',()=>localStorage.setItem('nai.'+f,$(f).value));}
+for(const f of fields){const v=localStorage.getItem('nai.'+f);if(v!==null)$(f).value=v;const saveField=()=>localStorage.setItem('nai.'+f,$(f).value);$(f).addEventListener('change',saveField);$(f).addEventListener('input',saveField);}
 function syncVal(id,vid,fmt){const el=$(id),s=$(vid);const f=()=>{s.textContent=fmt(Number(el.value));};el.addEventListener('input',f);el.addEventListener('input',()=>localStorage.setItem('nai.'+id,el.value));f();}
 syncVal('steps','stepsVal',v=>String(Math.round(v)));
 syncVal('scale','scaleVal',v=>v.toFixed(1));
@@ -243,7 +243,7 @@ const [w,h]=$('size').value.split('x').map(Number);
 const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:chars.map(c=>({prompt:c.prompt,negative:c.negative}))};
 try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(body)});const j=await r.json();
 if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.status);}
-else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);if(j.images&&j.images.length)setHero(j.images[0]);recent();}
+else{st.className='status ok';st.textContent='完了 seed='+j.seed;if(j.images&&j.images.length)setHero(j.images[0]);recent();}
 }catch(e){st.className='status err';st.textContent='通信エラー: '+e;}
 $('genFab').disabled=false;};
 checkToken();recent();
