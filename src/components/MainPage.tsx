@@ -330,6 +330,30 @@ export default function MainPage() {
     setStatus({ kind: "ok", text: "Downloaded without metadata" });
   };
 
+  // Use the hero image as the img2img base image (improvement
+  // #63): fetch the hero's own outputs/ URL (the same relative
+  // URL the <img> uses, mirroring restoreFromHero), wrap the
+  // blob as a File with the hero's filename, and attach it
+  // through the same setter as a device-picked file — replacing
+  // any current attachment. The form Drawer opens so strength /
+  // noise and the prompt can be adjusted right away; the
+  // generate-time cover-crop (#43) is unchanged.
+  const useHeroAsBaseImage = async () => {
+    if (!heroUrl) return;
+    try {
+      const r = await fetch(heroUrl);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      const name = decodeURIComponent(heroUrl.split("/").pop() || "image.png");
+      pickBaseImage(new File([blob], name, { type: blob.type || "image/png" }));
+    } catch (e) {
+      setStatus({ kind: "err", text: "Network error: " + e });
+      return;
+    }
+    setStatus({ kind: "ok", text: "Base image set" });
+    openModal();
+  };
+
   const applyRestore = (sel: RestoreSelection) => {
     const r = pendingRestore;
     if (!r) return;
@@ -658,7 +682,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} onDownloadClean={downloadCleanHero} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
+      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} onDownloadClean={downloadCleanHero} onUseAsBaseImage={useHeroAsBaseImage} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />

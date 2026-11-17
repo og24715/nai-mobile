@@ -45,6 +45,9 @@ interface Props {
   // Download the hero with its PNG text chunks stripped
   // (improvement #62).
   onDownloadClean: () => void;
+  // Attach the hero itself as the form's img2img base image
+  // (improvement #63).
+  onUseAsBaseImage: () => void;
   // Favorites (improvement #61): the hero's favorite state and
   // its toggle (heart overlay button + context-menu item), plus
   // the whole-outputs/ counts and the bulk "Delete Others" run.
@@ -61,15 +64,16 @@ interface Props {
 // hero; tapping the hero opens the original in a new tab. Long-
 // pressing the hero (right-click on desktop) opens a context menu
 // with upscale / enhance / restore-from-this-image / favorite /
-// open-original / download-without-metadata actions
-// (improvements #39 + #42 + #61 + #62); the
+// open-original / download-without-metadata /
+// use-as-base-image actions (improvements #39 + #42 + #61 +
+// #62 + #63); the
 // upscale and enhance items open parameter dialogs first
 // (improvements #41 + #42). The hero also carries a heart overlay
 // button (bottom-right) toggling its favorite state, favorited
 // thumbnails get a heart badge, and the Recent header has a
 // "Delete Others" bulk-delete with a confirmation dialog
 // (improvement #61).
-export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
+export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <>
@@ -101,6 +105,9 @@ export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, 
               </ContextMenuItem>
               <ContextMenuItem onClick={onRestoreHero}>
                 Restore from This Image
+              </ContextMenuItem>
+              <ContextMenuItem onClick={onUseAsBaseImage}>
+                Use as Base Image
               </ContextMenuItem>
               <ContextMenuItem onClick={onToggleFavorite}>
                 {heroFavorite ? "Remove from Favorites" : "Add to Favorites"}
