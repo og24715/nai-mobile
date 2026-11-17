@@ -82,9 +82,9 @@ function loadOpenSections(): string[] {
 
 const sectionContentCls = "flex flex-col gap-[18px] pt-1 pb-2";
 
-// The whole generation form. Rendered inside the full-screen modal;
+// The whole generation form. Rendered inside the bottom drawer;
 // every field auto-saves to localStorage on change, so the ▶ FAB can
-// generate from these values without the modal being open.
+// generate from these values without the sheet being open.
 export function GenerateForm({ form }: { form: FormState }) {
   const stepsNum = numOr(form.steps, 28);
   const scaleNum = numOr(form.scale, 5);
@@ -305,18 +305,33 @@ export function GenerateForm({ form }: { form: FormState }) {
                     ×
                   </Button>
                 </div>
-                <Label className={`${labelCls} mt-2`}>プロンプト</Label>
-                <Textarea
-                  className="min-h-[48px] text-base"
-                  value={c.prompt}
-                  onChange={(e) => setChar(i, { prompt: e.target.value })}
-                />
-                <Label className={`${labelCls} mt-[18px]`}>ネガティブ</Label>
-                <Input
-                  className="text-base"
-                  value={c.negative}
-                  onChange={(e) => setChar(i, { negative: e.target.value })}
-                />
+                {/* Same tabs pattern as the main prompt section (#17),
+                    in a compact size for these repeated blocks: the
+                    character negative is rarely edited, so it lives
+                    one tap away. Both fields stay controlled from the
+                    chars state (useCharacters / "nai.chars"), so
+                    switching tabs never loses either text. The
+                    selected tab is not persisted. */}
+                <Tabs defaultValue="positive" className="mt-2">
+                  <TabsList className="h-9 w-full">
+                    <TabsTrigger value="positive">ポジティブ</TabsTrigger>
+                    <TabsTrigger value="negative">ネガティブ</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="positive">
+                    <Textarea
+                      className="min-h-[48px] text-base"
+                      value={c.prompt}
+                      onChange={(e) => setChar(i, { prompt: e.target.value })}
+                    />
+                  </TabsContent>
+                  <TabsContent value="negative">
+                    <Input
+                      className="text-base"
+                      value={c.negative}
+                      onChange={(e) => setChar(i, { negative: e.target.value })}
+                    />
+                  </TabsContent>
+                </Tabs>
               </div>
             ))}
             {form.chars.length < MAX_CHARS && (
