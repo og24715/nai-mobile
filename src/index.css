@@ -48,6 +48,15 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    /* Tag-editor baseline sizes (improvement #26): the tag-editing
+       area is the app's size reference. Chips, the add-tag input,
+       suggestion rows and the chip editor bar all scale from these
+       tokens — do not inline literal sizes for them in components. */
+    --text-tag: 1.125rem;
+    --text-tag-badge: 0.875rem;
+    --text-suggest: 1.0625rem;
+    /* Minimum tap target (44px, the Apple HIG / Material guideline). */
+    --spacing-tap: 2.75rem;
 }
 
 :root {

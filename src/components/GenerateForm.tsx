@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -16,7 +16,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { TagField } from "@/components/TagField";
+import {
+  TagField,
+  type ChipEditorState,
+  type ChipSel,
+} from "@/components/TagField";
+import { ChipEditorBar } from "@/components/ChipEditorBar";
 import {
   Tabs,
   TabsContent,
@@ -102,6 +107,60 @@ export function GenerateForm({ form }: { form: FormState }) {
     }
   };
 
+  // --- Lifted chip selection + shared editor bar (improvement #26) ----
+  // The selected chip lives here, not inside TagField, so ONE editor
+  // bar can be rendered stuck to the bottom of the drawer scroll area:
+  // with many tags the weight controls stay reachable without
+  // scrolling to the field's own inline bar. Each TagField reports a
+  // ChipEditorState snapshot for its selected chip; re-reports whose
+  // display fields are unchanged are ignored (the snapshot's actions
+  // delegate to the field's latest closures, so it never goes stale).
+  const [activeChip, setActiveChip] = useState<
+    ({ fieldId: string } & ChipSel) | null
+  >(null);
+  const [chipEditor, setChipEditor] = useState<ChipEditorState | null>(null);
+
+  const handleChipSelect = useCallback(
+    (fieldId: string, sel: ChipSel | null) => {
+      setActiveChip(sel ? { fieldId, seg: sel.seg, tag: sel.tag } : null);
+      if (!sel) {
+        setChipEditor((prev) =>
+          prev && prev.fieldId === fieldId ? null : prev,
+        );
+      }
+    },
+    [],
+  );
+  const handleChipEditor = useCallback(
+    (fieldId: string, ed: ChipEditorState | null) => {
+      setChipEditor((prev) => {
+        if (!ed) return prev && prev.fieldId === fieldId ? null : prev;
+        if (
+          prev &&
+          prev.fieldId === ed.fieldId &&
+          prev.text === ed.text &&
+          prev.weight === ed.weight &&
+          prev.raw === ed.raw &&
+          prev.character === ed.character &&
+          prev.prefix === ed.prefix
+        ) {
+          return prev;
+        }
+        return ed;
+      });
+    },
+    [],
+  );
+  const chipProps = (fieldId: string) => ({
+    fieldId,
+    chipSelection:
+      activeChip && activeChip.fieldId === fieldId
+        ? { seg: activeChip.seg, tag: activeChip.tag }
+        : null,
+    onChipSelect: handleChipSelect,
+    onChipEditor: handleChipEditor,
+  });
+
   const setChar = (i: number, patch: Partial<CharPrompt>) =>
     form.updateChars(form.chars.map((c, j) => (j === i ? { ...c, ...patch } : c)));
   const removeChar = (i: number) =>
@@ -113,6 +172,7 @@ export function GenerateForm({ form }: { form: FormState }) {
   };
 
   return (
+    <div className={chipEditor ? "pb-16" : undefined}>
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
         <AccordionTrigger className="py-3.5 text-[15px]">
@@ -139,6 +199,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                   className="min-h-[84px] text-base"
                   value={form.prompt}
                   onChange={form.setPrompt}
+                  {...chipProps("prompt")}
                 />
               </TabsContent>
               <TabsContent value="negative">
@@ -149,6 +210,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                   className="min-h-[56px] text-base"
                   value={form.negative}
                   onChange={form.setNegative}
+                  {...chipProps("negative")}
                 />
               </TabsContent>
             </Tabs>
@@ -329,6 +391,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                       className="min-h-[48px] text-base"
                       value={c.prompt}
                       onChange={(v) => setChar(i, { prompt: v })}
+                      {...chipProps(`char-${i}-prompt`)}
                     />
                   </TabsContent>
                   <TabsContent value="negative">
@@ -339,6 +402,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                       className="min-h-[44px] text-base"
                       value={c.negative}
                       onChange={(v) => setChar(i, { negative: v })}
+                      {...chipProps(`char-${i}-negative`)}
                     />
                   </TabsContent>
                 </Tabs>
@@ -358,5 +422,18 @@ export function GenerateForm({ form }: { form: FormState }) {
         </AccordionContent>
       </AccordionItem>
     </Accordion>
+
+    {/* Shared chip editor bar: stuck to the bottom of the drawer
+        scroll area (above the ⚙ footer in FormModal) while any chip
+        is selected, so the weight controls are reachable without
+        scrolling however many tags the field has. The wrapper's extra
+        bottom padding while it is visible lets the last chips scroll
+        clear of the bar. */}
+    {chipEditor && (
+      <div className="sticky bottom-0 z-10 -mx-5 mt-3 border-t border-border bg-background px-5 py-2.5">
+        <ChipEditorBar editor={chipEditor} />
+      </div>
+    )}
+    </div>
   );
 }
