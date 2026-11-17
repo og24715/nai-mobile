@@ -286,6 +286,7 @@ export function TagField({
               <button
                 key={`${c.seg}:${c.tag}`}
                 type="button"
+                data-chip
                 onClick={() =>
                   onChipSelect(fieldId, active ? null : { seg: c.seg, tag: c.tag })
                 }
@@ -311,6 +312,7 @@ export function TagField({
             <div
               key={`${c.seg}:${c.tag}`}
               role="group"
+              data-chip
               aria-label={c.text}
               className={cn(
                 "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Accordion,
   AccordionContent,
@@ -159,6 +159,37 @@ export function GenerateForm({ form }: { form: FormState }) {
     onChipSelect: handleChipSelect,
     onChipEditor: handleChipEditor,
   });
+
+  // --- Tap outside the editor bar to close it (improvement #36) -------
+  // While the bar is open, a pointerdown anywhere outside it clears
+  // the chip selection. Two kinds of targets are exempt and left to
+  // their own handlers: the bar itself (its controls), and chips
+  // (marked data-chip in TagField — a center tap switches/toggles the
+  // selection, a −/+ tap steps the weight with #34's follow logic).
+  // Everything else — the add-tag input, accordion headers, sliders,
+  // the drawer footer, the overlay — counts as outside. The listener
+  // only observes: it never preventDefaults or stops propagation, so
+  // the tapped control keeps its own behavior.
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef(chipEditor);
+  useEffect(() => {
+    editorRef.current = chipEditor;
+  });
+  const barOpen = chipEditor !== null;
+  useEffect(() => {
+    if (!barOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (barRef.current?.contains(t)) return;
+      if (t.closest?.("[data-chip]")) return;
+      editorRef.current?.onClose();
+    };
+    // Capture phase, so a control that stops propagation on its own
+    // pointerdown cannot keep the bar open by hiding the tap.
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [barOpen]);
 
   const setChar = (i: number, patch: Partial<CharPrompt>) =>
     form.updateChars(form.chars.map((c, j) => (j === i ? { ...c, ...patch } : c)));
@@ -422,7 +453,7 @@ export function GenerateForm({ form }: { form: FormState }) {
         bottom padding while it is visible lets the last chips scroll
         clear of the bar. */}
     {chipEditor && (
-      <div className="sticky bottom-0 z-10 -mx-5 mt-3 border-t border-border bg-background px-5 py-2.5">
+      <div ref={barRef} className="sticky bottom-0 z-10 -mx-5 mt-3 border-t border-border bg-background px-5 py-2.5">
         <ChipEditorBar editor={chipEditor} />
       </div>
     )}
