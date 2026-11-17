@@ -156,9 +156,10 @@ export default function MainPage() {
       steps: Number(steps),
       scale: Number(scale),
       sampler,
-      // Empty seed = a fresh random roll on the server. The seed that
-      // was actually used is only shown in the status line; it is
-      // never written back into the seed field or localStorage.
+      // Empty seed = the server omits the seed and NovelAI chooses
+      // one; the seed that was actually used comes back in the
+      // response and is only shown in the status line — it is never
+      // written back into the seed field or localStorage.
       seed: seed === "" ? null : Number(seed),
       characters: chars.map((c) => ({ prompt: c.prompt, negative: c.negative })),
     };
@@ -167,7 +168,7 @@ export default function MainPage() {
       if (!j.ok) {
         setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
       } else {
-        setStatus({ kind: "ok", text: "完了 seed=" + j.seed });
+        setStatus({ kind: "ok", text: j.seed != null ? "完了 seed=" + j.seed : "完了" });
         if (j.images && j.images.length) setHeroUrl(j.images[0]);
         void refreshRecent();
         void refreshSubscription();

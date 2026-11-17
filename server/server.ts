@@ -50,8 +50,12 @@ function buildPayload(g: GenInput) {
   const model = String(g.model || "nai-diffusion-4-5-full");
   const prompt = String(g.prompt || "").trim();
   const negative = String(g.negative || "").trim();
+  // Empty seed (improvement #24): omit the seed from the request
+  // entirely and let NovelAI choose. The generate handler retries
+  // once with a random seed if NAI rejects that with a 400, and
+  // recovers the actually-used seed from the returned PNG metadata.
   const seed = (g.seed === "" || g.seed === null || g.seed === undefined)
-    ? Math.floor(Math.random() * 4294967295)
+    ? null
     : Number(g.seed) >>> 0;
   const chars = (Array.isArray(g.characters) ? g.characters : [])
     .filter((c) => c && String(c.prompt || "").trim())
@@ -67,7 +71,7 @@ function buildPayload(g: GenInput) {
     scale: Number(g.scale) || 5,
     sampler: String(g.sampler || "k_euler_ancestral"),
     steps: Number(g.steps) || 28,
-    seed,
+    ...(seed != null ? { seed } : {}),
     n_samples: 1,
     noise_schedule: "karras",
     uc: negative,
@@ -522,13 +526,33 @@ const server = http.createServer(async (req, res) => {
       const g = JSON.parse((await readBody(req)).toString("utf8")) as GenInput;
       if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "プロンプトが空です" }); return; }
       const { payload, seed } = buildPayload(g);
-      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
+      let usedSeed: number | null = seed;
+      const callNAI = async (): Promise<Response> => {
+        const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
+        try {
+          return await fetch(API_URL, { method: "POST", signal: ctrl.signal,
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": UA },
+            body: JSON.stringify(payload) });
+        } finally { clearTimeout(timer); }
+      };
       let resp: Response;
       try {
-        resp = await fetch(API_URL, { method: "POST", signal: ctrl.signal,
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0" },
-          body: JSON.stringify(payload) });
-      } finally { clearTimeout(timer); }
+        resp = await callNAI();
+      } catch (e) {
+        sendJson(res, 500, { ok: false, error: String((e as Error)?.message || e) }); return;
+      }
+      // Seed omitted (improvement #24): retry once with a random seed
+      // if NAI rejects the request. A 400 means the request was
+      // rejected, so nothing was generated or charged.
+      if (!resp.ok && resp.status === 400 && usedSeed == null) {
+        const retrySeed = Math.floor(Math.random() * 4294967295);
+        (payload.parameters as Record<string, unknown>).seed = retrySeed;
+        try {
+          const retry = await callNAI();
+          if (retry.ok) { resp = retry; usedSeed = retrySeed; }
+          else { await retry.text().catch(() => undefined); }
+        } catch { /* fall through to the original error handling */ }
+      }
       if (!resp.ok) {
         const text = (await resp.text()).slice(0, 500);
         if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
@@ -536,17 +560,30 @@ const server = http.createServer(async (req, res) => {
       }
       const zip = new Uint8Array(await resp.arrayBuffer());
       const files = unzipSync(zip);
+      const pngs: Buffer[] = [];
+      for (const [name, data] of Object.entries(files)) {
+        if (name.toLowerCase().endsWith(".png")) pngs.push(Buffer.from(data));
+      }
+      if (!pngs.length) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
+      // Recover the seed NovelAI actually used from the returned
+      // PNG's Comment metadata (it embeds the full parameters).
+      if (usedSeed == null) {
+        try {
+          const comment = extractPngText(pngs[0])?.get("Comment");
+          if (comment) {
+            const cj = JSON.parse(comment) as { seed?: unknown };
+            if (typeof cj.seed === "number" && Number.isFinite(cj.seed)) usedSeed = cj.seed;
+          }
+        } catch { /* fall back to a seedless filename / null seed */ }
+      }
       const saved: string[] = [];
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      let idx = 0;
-      for (const [name, data] of Object.entries(files)) {
-        if (!name.toLowerCase().endsWith(".png")) continue;
-        const out = `${stamp}_seed${seed}_${idx}.png`; idx++;
-        fs.writeFileSync(path.join(OUTPUTS, out), Buffer.from(data));
+      pngs.forEach((data, idx) => {
+        const out = `${stamp}_seed${usedSeed ?? "na"}_${idx}.png`;
+        fs.writeFileSync(path.join(OUTPUTS, out), data);
         saved.push("outputs/" + encodeURIComponent(out));
-      }
-      if (!saved.length) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
-      sendJson(res, 200, { ok: true, images: saved, seed }); return;
+      });
+      sendJson(res, 200, { ok: true, images: saved, seed: usedSeed }); return;
     }
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("not found");
   } catch (e) {

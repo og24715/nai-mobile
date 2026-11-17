@@ -21,7 +21,9 @@ export interface GenerateRequest {
 export interface GenerateResponse {
   ok: boolean;
   images?: string[];
-  seed?: number;
+  // Null when the seed could not be recovered from the generated PNG
+  // (the seed itself is chosen by NovelAI when the field is empty).
+  seed?: number | null;
   error?: string;
 }
 
