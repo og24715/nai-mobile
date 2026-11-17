@@ -67,25 +67,110 @@ function fmtCount(n: number): string {
 // source#/target#/mutual# prefix selector. Raw chunks get only the
 // text row plus delete. Weight is NOT adjusted here (#34): each
 // chip carries its own [−][+] step zones.
+// Non-raw chips also get tag suggestions while editing (#60): the
+// same data as the add-tag input (fetchTagSuggestions, 250 ms
+// debounce, 2-char minimum, query on the part after any prefix),
+// rendered as an inline list under the input — NOT the add input's
+// Combobox, whose popup is portaled outside this Popover and
+// would make every suggestion tap an outside press that dismisses
+// the editor (the #50 veto only exempts this field's chips). A
+// pick FILLS the draft (prefix preserved); ✓ / Enter still
+// commits it through setChipText.
 function ChipEditorContent({
   chip,
   character,
+  suggest,
+  model,
   onApplyText,
   onPrefix,
   onDelete,
 }: {
   chip: Chip;
   character: boolean;
+  suggest?: boolean;
+  model?: string;
   onApplyText: (t: string) => void;
   onPrefix: (p: string | null) => void;
   onDelete: () => void;
 }) {
   const [draft, setDraft] = useState(chip.text);
+
+  // --- Suggestions (improvement #60) -----------------------------------
+  const suggestEnabled = !!suggest && !chip.raw;
+  const [editSuggestions, setEditSuggestions] = useState<TagSuggestion[]>(
+    [],
+  );
+  const editInputRef = useRef<HTMLInputElement | null>(null);
+  const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const editAbortRef = useRef<AbortController | null>(null);
+  const editQueryRef = useRef("");
+
+  const runEditQuery = (text: string) => {
+    if (!suggestEnabled) return;
+    // A leading source#/target#/mutual# prefix is not part of the
+    // tag being searched; it is re-attached when a suggestion is
+    // picked — same handling as the add-tag input (#22).
+    const q = splitPrefix(text).rest;
+    editQueryRef.current = q;
+    if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
+    if (q.length < 2 || /[:{}[\]]/.test(q)) {
+      setEditSuggestions([]);
+      return;
+    }
+    editDebounceRef.current = setTimeout(() => {
+      editAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      editAbortRef.current = ctrl;
+      void fetchTagSuggestions(
+        readStored(TOKEN_KEY) ?? "",
+        q,
+        model ?? "",
+        ctrl.signal,
+      ).then((list) => {
+        // Drop stale responses, mirroring the add input's guard.
+        if (editQueryRef.current === q) {
+          setEditSuggestions(list.slice(0, 8));
+        }
+      });
+    }, 250);
+  };
+
+  // Drop pending suggestion work when the editor unmounts.
+  useEffect(
+    () => () => {
+      if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
+      editAbortRef.current?.abort();
+    },
+    [],
+  );
+
+  // Fill the draft with a picked suggestion (prefix preserved).
+  // Filling is not applying: focus stays in the input so the user
+  // can keep editing or commit with Enter / ✓.
+  const pickEditSuggestion = (s: TagSuggestion) => {
+    const { prefix: p } = splitPrefix(draft);
+    setDraft(p ? `${p}#${s.name}` : s.name);
+    setEditSuggestions([]);
+    editQueryRef.current = "";
+    editInputRef.current?.focus();
+  };
+
+  const apply = () => {
+    setEditSuggestions([]);
+    editQueryRef.current = "";
+    onApplyText(draft);
+  };
+
   // Re-seed the draft when the popover's chip changes text through
   // another action (e.g. a prefix change rewrites the chip text).
   // Typing never touches chip.text, so this does not fight input.
+  // A reseed also makes any showing suggestions stale.
   useEffect(() => {
     setDraft(chip.text);
+    setEditSuggestions([]);
+    editQueryRef.current = "";
   }, [chip.text]);
   const prefix = splitPrefix(chip.text).prefix;
 
@@ -93,6 +178,7 @@ function ChipEditorContent({
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
         <input
+          ref={editInputRef}
           type="text"
           value={draft}
           aria-label="Tag text"
@@ -102,11 +188,14 @@ function ChipEditorContent({
           autoCorrect="off"
           spellCheck={false}
           autoFocus
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            runEditQuery(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              onApplyText(draft);
+              apply();
             }
           }}
           className="h-tap min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-tag outline-none focus:border-primary"
@@ -116,7 +205,7 @@ function ChipEditorContent({
           variant="secondary"
           aria-label="Apply text"
           className="h-tap w-tap shrink-0 p-0"
-          onClick={() => onApplyText(draft)}
+          onClick={apply}
         >
           <Check size={18} />
         </Button>
@@ -130,6 +219,34 @@ function ChipEditorContent({
           <Trash2 size={16} />
         </Button>
       </div>
+      {suggestEnabled && editSuggestions.length > 0 && (
+        <ul className="flex flex-col overflow-hidden rounded-md border border-border bg-background">
+          {editSuggestions.map((s) => (
+            <li key={s.name}>
+              <button
+                type="button"
+                // Keep focus in the text input: mousedown would
+                // otherwise move it to the button before the click
+                // fills the draft.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pickEditSuggestion(s)}
+                className="flex min-h-tap w-full items-center px-3.5 text-left text-suggest active:bg-accent"
+              >
+                <span>{s.name}</span>
+                {s.mine > 0 ? (
+                  <span className="ml-auto text-xs font-medium text-primary">
+                    Frequently Used
+                  </span>
+                ) : s.count !== null ? (
+                  <span className="ml-auto text-tag-badge text-muted-foreground">
+                    {fmtCount(s.count)}
+                  </span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {!chip.raw && character && (
         <div className="flex flex-wrap items-center gap-1.5">
           <select
@@ -351,6 +468,8 @@ export function TagField({
     <ChipEditorContent
       chip={c}
       character={!!character}
+      suggest={!!suggest}
+      model={model}
       onApplyText={(t) => applyText(c, t)}
       onPrefix={(p) => applyPrefix(c, p)}
       onDelete={() => applyDelete(c)}
