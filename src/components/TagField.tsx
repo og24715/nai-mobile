@@ -74,14 +74,17 @@ function fmtCount(n: number): string {
 // Combobox, whose popup is portaled outside this Popover and
 // would make every suggestion tap an outside press that dismisses
 // the editor (the #50 veto only exempts this field's chips). A
-// pick FILLS the draft (prefix preserved); ✓ / Enter still
-// commits it through setChipText.
+// pick COMMITS immediately (#65): it runs the same setChipText
+// path as ✓ / Enter (prefix preserved, section split included)
+// and then closes the Popover. Typing only edits the draft; ✓ /
+// Enter still commits the draft without closing.
 function ChipEditorContent({
   chip,
   character,
   suggest,
   model,
   onApplyText,
+  onPickSuggestion,
   onPrefix,
   onDelete,
 }: {
@@ -90,6 +93,7 @@ function ChipEditorContent({
   suggest?: boolean;
   model?: string;
   onApplyText: (t: string) => void;
+  onPickSuggestion: (t: string) => void;
   onPrefix: (p: string | null) => void;
   onDelete: () => void;
 }) {
@@ -146,15 +150,15 @@ function ChipEditorContent({
     [],
   );
 
-  // Fill the draft with a picked suggestion (prefix preserved).
-  // Filling is not applying: focus stays in the input so the user
-  // can keep editing or commit with Enter / ✓.
+  // A picked suggestion commits immediately (#65): the picked
+  // name (with the draft's prefix re-attached) goes through the
+  // same setChipText commit path as ✓ / Enter, and the Popover
+  // closes — no separate apply step.
   const pickEditSuggestion = (s: TagSuggestion) => {
     const { prefix: p } = splitPrefix(draft);
-    setDraft(p ? `${p}#${s.name}` : s.name);
     setEditSuggestions([]);
     editQueryRef.current = "";
-    editInputRef.current?.focus();
+    onPickSuggestion(p ? `${p}#${s.name}` : s.name);
   };
 
   const apply = () => {
@@ -225,9 +229,8 @@ function ChipEditorContent({
             <li key={s.name}>
               <button
                 type="button"
-                // Keep focus in the text input: mousedown would
-                // otherwise move it to the button before the click
-                // fills the draft.
+                // Don't let the tap move focus to the button
+                // before the click commits the pick.
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pickEditSuggestion(s)}
                 className="flex min-h-tap w-full items-center px-3.5 text-left text-suggest active:bg-accent"
@@ -421,6 +424,13 @@ export function TagField({
       setOpenChip(r.select ?? null);
     }
   };
+  // Suggestion picks in the chip editor (#65): the same commit as
+  // applyText, but the Popover closes instead of following the
+  // (possibly split-out) chip.
+  const applySuggestionText = (c: Chip, t: string) => {
+    applyText(c, t);
+    setOpenChip(null);
+  };
   const applyDelete = (c: Chip) => {
     onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
     setOpenChip(null);
@@ -471,6 +481,7 @@ export function TagField({
       suggest={!!suggest}
       model={model}
       onApplyText={(t) => applyText(c, t)}
+      onPickSuggestion={(t) => applySuggestionText(c, t)}
       onPrefix={(p) => applyPrefix(c, p)}
       onDelete={() => applyDelete(c)}
     />
