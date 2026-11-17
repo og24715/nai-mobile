@@ -148,7 +148,7 @@ function loadOpenSections(): string[] {
   return ["prompt"];
 }
 
-const sectionContentCls = "flex flex-col gap-[18px] pt-1 pb-2";
+const sectionContentCls = "flex flex-col gap-6 pt-2 pb-4";
 
 // The whole generation form. Rendered inside the bottom drawer;
 // every field auto-saves to localStorage on change, so the ▶ FAB can
@@ -344,6 +344,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 max={50}
                 step={1}
                 className={cn(
+                  "px-2",
                   stepsOver &&
                     "[&_[data-slot=slider-range]]:bg-amber-500 [&_[data-slot=slider-thumb]]:border-amber-500",
                 )}
@@ -355,7 +356,7 @@ export function GenerateForm({ form }: { form: FormState }) {
               <Label className={labelCls}>
                 Scale (CFG) <span className="text-lg font-semibold tabular-nums text-foreground">{scaleNum.toFixed(1)}</span>
               </Label>
-              <Slider
+              <Slider className="px-2"
                 value={[scaleNum]}
                 min={0}
                 max={20}
@@ -458,7 +459,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                     {strengthNum.toFixed(2)}
                   </span>
                 </Label>
-                <Slider
+                <Slider className="px-2"
                   value={[strengthNum]}
                   min={0}
                   max={1}
@@ -476,7 +477,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                     {noiseNum.toFixed(2)}
                   </span>
                 </Label>
-                <Slider
+                <Slider className="px-2"
                   value={[noiseNum]}
                   min={0}
                   max={1}
@@ -499,7 +500,7 @@ export function GenerateForm({ form }: { form: FormState }) {
         <AccordionContent>
           <div className="pb-2">
             {form.chars.map((c, i) => (
-              <div key={i} className="mt-4 rounded-xl border border-border p-4">
+              <div key={i} className="mt-4 rounded-xl border border-border p-5">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Char {i + 1}</span>
                   <Button
@@ -574,10 +575,11 @@ export function GenerateForm({ form }: { form: FormState }) {
                 MainPage) and sent as reference_image_multiple.
                 On models without the capability the block renders
                 inert with a note — it is never hidden. Entries are
-                grouped in one AttachmentGroup laid out as a
-                2-column grid (#53), each cell keeping its own
-                sliders under its image, so several references read
-                as one set instead of a long stack. */}
+                grouped in one AttachmentGroup (#53); since #58 they
+                stack in a single full-width column with generous
+                gaps — at half width the sliders were cramped, their
+                tracks cut off at the cell edge and their thumbs
+                flush against it, which felt easy to mis-tap. */}
             <div>
               <Label className={labelCls}>Vibe Transfer</Label>
               {!caps.vibeTransfer && (
@@ -587,15 +589,15 @@ export function GenerateForm({ form }: { form: FormState }) {
               )}
               <div
                 className={cn(
-                  "flex flex-col gap-[18px]",
+                  "flex flex-col gap-6",
                   !caps.vibeTransfer && "pointer-events-none opacity-50",
                 )}
                 aria-disabled={!caps.vibeTransfer}
               >
                 {form.vibes.length > 0 && (
-                  <AttachmentGroup className="grid grid-cols-2 gap-4 overflow-x-visible py-0">
+                  <AttachmentGroup className="flex flex-col gap-10 overflow-x-visible py-0">
                     {form.vibes.map((v) => (
-                      <div key={v.id} className="flex min-w-0 flex-col gap-3">
+                      <div key={v.id} className="flex min-w-0 flex-col gap-6">
                     <Attachment
                       orientation="vertical"
                       className="w-full has-data-[slot=attachment-content]:w-full"
@@ -622,7 +624,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                           {v.strength.toFixed(2)}
                         </span>
                       </Label>
-                      <Slider
+                      <Slider className="px-2"
                         value={[v.strength]}
                         min={0}
                         max={1}
@@ -637,7 +639,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                           {v.info.toFixed(2)}
                         </span>
                       </Label>
-                      <Slider
+                      <Slider className="px-2"
                         value={[v.info]}
                         min={0}
                         max={1}
@@ -681,7 +683,8 @@ export function GenerateForm({ form }: { form: FormState }) {
                 into the secondary strength on the server. Same
                 inert-with-note treatment on unsupported models.
                 Entries are grouped in one AttachmentGroup laid out
-                as a 2-column grid (#53), like the Vibe block. */}
+                in a single full-width column (#53, #58), like the
+                Vibe block. */}
             <div>
               <Label className={labelCls}>Precise Reference</Label>
               {!caps.preciseReference && (
@@ -691,15 +694,15 @@ export function GenerateForm({ form }: { form: FormState }) {
               )}
               <div
                 className={cn(
-                  "flex flex-col gap-[18px]",
+                  "flex flex-col gap-6",
                   !caps.preciseReference && "pointer-events-none opacity-50",
                 )}
                 aria-disabled={!caps.preciseReference}
               >
                 {form.refs.length > 0 && (
-                  <AttachmentGroup className="grid grid-cols-2 gap-4 overflow-x-visible py-0">
+                  <AttachmentGroup className="flex flex-col gap-10 overflow-x-visible py-0">
                     {form.refs.map((r) => (
-                      <div key={r.id} className="flex min-w-0 flex-col gap-3">
+                      <div key={r.id} className="flex min-w-0 flex-col gap-6">
                     <Attachment
                       orientation="vertical"
                       className="w-full has-data-[slot=attachment-content]:w-full"
@@ -745,7 +748,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                           {r.strength.toFixed(2)}
                         </span>
                       </Label>
-                      <Slider
+                      <Slider className="px-2"
                         value={[r.strength]}
                         min={0}
                         max={1}
@@ -760,7 +763,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                           {r.fidelity.toFixed(2)}
                         </span>
                       </Label>
-                      <Slider
+                      <Slider className="px-2"
                         value={[r.fidelity]}
                         min={0}
                         max={1}

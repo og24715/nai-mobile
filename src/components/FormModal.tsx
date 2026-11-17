@@ -26,7 +26,7 @@ export function FormModal({ open, onRequestClose, children }: Props) {
       }}
     >
       <DrawerContent className="bg-background [--drawer-content-max-height:92dvh] [--drawer-height:92dvh]">
-        <div className="mx-auto min-h-0 w-full max-w-[640px] flex-1 overflow-y-auto px-5 pt-2 pb-16">
+        <div className="mx-auto min-h-0 w-full max-w-[640px] flex-1 overflow-y-auto px-6 pt-2 pb-16">
           <div className="flex items-center justify-between">
             <DrawerTitle className="text-2xl font-semibold">Generate</DrawerTitle>
             <Button
