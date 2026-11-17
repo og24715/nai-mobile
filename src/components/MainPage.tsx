@@ -11,6 +11,7 @@ import {
   fetchRecent,
   fetchSubscription,
   requestGenerate,
+  requestUpscale,
   type GenerateRequest,
   type RecentItem,
   type SubscriptionInfo,
@@ -40,6 +41,7 @@ export default function MainPage() {
   const [items, setItems] = useState<RecentItem[]>([]);
   const [status, setStatus] = useState<StatusState>({ kind: "", text: "" });
   const [generating, setGenerating] = useState(false);
+  const [upscaling, setUpscaling] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   // Parsed settings from a picked device image, waiting for the
   // user to choose which groups to import (improvement #31).
@@ -175,6 +177,38 @@ export default function MainPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Upscale the hero image (improvement #39): the server relays
+  // the outputs/ file to NovelAI's standalone upscaler and saves
+  // the result as a new outputs/ entry, which then becomes the
+  // hero. Upscaling consumes Anlas, so the allowance bars are
+  // refreshed alongside the recent list.
+  const upscaleHero = async () => {
+    if (!heroUrl || upscaling) return;
+    const token = readStored(TOKEN_KEY);
+    if (!token) {
+      location.replace("setup");
+      return;
+    }
+    const name = decodeURIComponent(heroUrl.split("/").pop() || "");
+    if (!name) return;
+    setUpscaling(true);
+    setStatus({ kind: "", text: "アップスケール中…" });
+    try {
+      const { status: httpStatus, json: j } = await requestUpscale(token, name, model);
+      if (!j.ok) {
+        setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
+      } else {
+        setStatus({ kind: "ok", text: "アップスケールしました" });
+        if (j.item) setHeroUrl(j.item.url);
+        void refreshRecent();
+        void refreshSubscription();
+      }
+    } catch (e) {
+      setStatus({ kind: "err", text: "通信エラー: " + e });
+    }
+    setUpscaling(false);
+  };
+
   const generate = async () => {
     const token = readStored(TOKEN_KEY);
     if (!token) {
@@ -242,7 +276,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} />
+      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} onUpscale={upscaleHero} upscaling={upscaling} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />

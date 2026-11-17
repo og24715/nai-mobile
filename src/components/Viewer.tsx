@@ -1,4 +1,10 @@
 import type { RecentItem } from "@/lib/api";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { cn } from "cn";
 
 export interface StatusState {
@@ -13,20 +19,45 @@ interface Props {
   onSelect: (url: string) => void;
   onRestoreFile: (f: File) => void;
   onRestoreHero: () => void;
+  onUpscale: () => void;
+  upscaling: boolean;
 }
 
 // Main screen: full-bleed hero image on top, status line, and the
 // recent-generations thumbnail grid. Tapping a thumbnail swaps the
-// hero; tapping the hero opens the original in a new tab.
-export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero }: Props) {
+// hero; tapping the hero opens the original in a new tab. Long-
+// pressing the hero (right-click on desktop) opens a context menu
+// with upscale / restore-from-this-image / open-original actions
+// (improvement #39).
+export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero, onUpscale, upscaling }: Props) {
   return (
     <>
       {heroUrl && (
-        <div className="leading-none">
-          <a href={heroUrl} target="_blank" rel="noopener noreferrer">
-            <img src={heroUrl} alt="" className="block h-auto w-full" />
-          </a>
-        </div>
+        <ContextMenu>
+          <ContextMenuTrigger className="block leading-none [-webkit-touch-callout:none]">
+            <a href={heroUrl} target="_blank" rel="noopener noreferrer">
+              <img
+                src={heroUrl}
+                alt=""
+                draggable={false}
+                className="block h-auto w-full [-webkit-touch-callout:none]"
+              />
+            </a>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem disabled={upscaling} onClick={onUpscale}>
+              アップスケール
+            </ContextMenuItem>
+            <ContextMenuItem onClick={onRestoreHero}>
+              この画像から復元
+            </ContextMenuItem>
+            <ContextMenuItem
+              onClick={() => window.open(heroUrl, "_blank", "noopener,noreferrer")}
+            >
+              元画像を開く
+            </ContextMenuItem>
+          </ContextMenuContent>
+        </ContextMenu>
       )}
       <main className="mx-auto max-w-[640px] px-5 pt-8 pb-32">
         <div

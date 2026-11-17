@@ -168,3 +168,30 @@ export async function requestGenerate(
   });
   return { status: r.status, json: (await r.json()) as GenerateResponse };
 }
+
+export interface UpscaleResponse {
+  ok: boolean;
+  // The saved upscaled image, in the same shape as /api/recent
+  // items, so the client can select it as the hero directly.
+  item?: RecentItem;
+  error?: string;
+}
+
+// Upscale one outputs/ image via the server's relay to NovelAI's
+// standalone upscaler (improvement #39). The file stays on the PC —
+// only its name is sent; the server reads it from outputs/.
+export async function requestUpscale(
+  token: string,
+  name: string,
+  model: string,
+): Promise<{ status: number; json: UpscaleResponse }> {
+  const r = await fetch("api/upscale", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + token,
+    },
+    body: JSON.stringify({ name, model }),
+  });
+  return { status: r.status, json: (await r.json()) as UpscaleResponse };
+}

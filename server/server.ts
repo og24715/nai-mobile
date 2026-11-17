@@ -19,6 +19,7 @@ const OUTPUTS = path.join(ROOT, "outputs");
 const STATIC = path.join(ROOT, "dist");
 const PORT = Number(process.env.PORT) || 8196;
 const API_URL = "https://image.novelai.net/ai/generate-image";
+const UPSCALE_URL = "https://image.novelai.net/ai/upscale";
 const SUBSCRIPTION_URL = "https://image.novelai.net/user/subscription";
 const SUGGEST_URL = "https://image.novelai.net/ai/generate-image/suggest-tags";
 const UA = "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0";
@@ -523,6 +524,71 @@ const server = http.createServer(async (req, res) => {
       const headers: Record<string, string> = { "Content-Type": "image/png", "Content-Length": String(data.length) };
       if (url.searchParams.get("download") === "1") headers["Content-Disposition"] = `attachment; filename="${name}"`;
       res.writeHead(200, headers); res.end(data); return;
+    }
+    if (req.method === "POST" && p === "api/upscale") {
+      // Upscale (improvement #39): relay one outputs/ image to
+      // NovelAI's standalone upscaler. Same token pattern as
+      // generate: the browser's token arrives per-request and is
+      // used in memory for this one upstream call only.
+      const auth = String(req.headers.authorization || "");
+      const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; model?: unknown };
+      const name = typeof body.name === "string" ? body.name : "";
+      // The name must be a file actually present in outputs/ —
+      // exact match against the directory listing, so no path
+      // traversal is possible.
+      const listed = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"));
+      if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "対象の画像が見つかりません" }); return; }
+      const png = fs.readFileSync(path.join(OUTPUTS, name));
+      // OpenAPI contract (image.UpscaleRequest): the only fields
+      // are image (base64 string), model (an image model API name)
+      // and the optional declared_blur_sigma. There is NO scale,
+      // width or height field — the upscaler's factor is fixed —
+      // so only image + model are sent and blur sigma is left at
+      // the schema default (absent). The model is the one selected
+      // in the client's form: the source PNG's metadata carries
+      // only a display name ("NovelAI Diffusion V5"), not the API
+      // name, so it cannot be recovered server-side.
+      const model = typeof body.model === "string" && body.model ? body.model : "nai-diffusion-4-5-full";
+      const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
+      let resp: Response;
+      try {
+        resp = await fetch(UPSCALE_URL, { method: "POST", signal: ctrl.signal,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": UA },
+          body: JSON.stringify({ image: png.toString("base64"), model }) });
+      } catch (e) {
+        clearTimeout(timer);
+        sendJson(res, 500, { ok: false, error: String((e as Error)?.message || e) }); return;
+      }
+      clearTimeout(timer);
+      if (!resp.ok) {
+        const text = (await resp.text()).slice(0, 500);
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
+      }
+      // Default response is a zip of PNGs (same as generate-image);
+      // a JSON body of base64 images is the documented alternative
+      // when the upstream answers with one, so accept both.
+      let outPng: Buffer | null = null;
+      if ((resp.headers.get("content-type") || "").includes("application/json")) {
+        const data = (await resp.json()) as { images?: { image?: unknown }[] };
+        const b64 = Array.isArray(data.images) && typeof data.images[0]?.image === "string" ? data.images[0].image : "";
+        if (b64) outPng = Buffer.from(b64, "base64");
+      } else {
+        const zip = new Uint8Array(await resp.arrayBuffer());
+        const files = unzipSync(zip);
+        for (const [fname, data] of Object.entries(files)) {
+          if (fname.toLowerCase().endsWith(".png")) { outPng = Buffer.from(data); break; }
+        }
+      }
+      if (!outPng) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
+      const base = name.replace(/\.png$/i, "");
+      let out = `${base}_up.png`;
+      for (let n = 2; fs.existsSync(path.join(OUTPUTS, out)); n++) out = `${base}_up${n}.png`;
+      fs.writeFileSync(path.join(OUTPUTS, out), outPng);
+      // Same item shape as /api/recent entries.
+      sendJson(res, 200, { ok: true, item: { name: out, url: "outputs/" + encodeURIComponent(out) } }); return;
     }
     if (req.method === "POST" && p === "api/generate") {
       // Token arrives per-request from the browser (localStorage) and is
