@@ -16,7 +16,7 @@ export default function SetupPage() {
   const save = () => {
     const t = token.trim();
     if (!t) {
-      alert("トークンが空です");
+      alert("The token is empty");
       return;
     }
     writeStored(TOKEN_KEY, t);
@@ -32,25 +32,25 @@ export default function SetupPage() {
   return (
     <main className="mx-auto max-w-[640px] px-5 pt-14 pb-24">
       <header>
-        <h1 className="mb-3 text-2xl font-bold">トークン設定</h1>
+        <h1 className="mb-3 text-2xl font-bold">Token Settings</h1>
         <p className="text-muted-foreground">
-          NovelAI の Persistent API Token をこのブラウザに保存します
+          Save your NovelAI Persistent API Token in this browser
         </p>
       </header>
 
       <section className="mb-14">
         <div className="mt-6 rounded-[20px] border border-border bg-card px-6 py-7">
-          <h2 className="mb-3 text-lg font-semibold">APIトークン</h2>
+          <h2 className="mb-3 text-lg font-semibold">API Token</h2>
           <p className={hintCls}>
             {has
-              ? "保存済みトークン: あり（差し替える場合は新しいトークンを保存）"
-              : "保存済みトークン: なし"}
+              ? "Saved token: yes (save a new token to replace it)"
+              : "Saved token: none"}
           </p>
           <Label
             htmlFor="token"
             className="mt-[18px] mb-1.5 block text-sm font-medium text-muted-foreground"
           >
-            Persistent API Token（このブラウザの localStorage にだけ保存されます）
+            Persistent API Token (stored only in this browser's localStorage)
           </Label>
           <Input
             id="token"
@@ -67,7 +67,7 @@ export default function SetupPage() {
             onClick={save}
             className="mt-6 h-[52px] w-full rounded-full border border-border text-base"
           >
-            トークンを保存
+            Save Token
           </Button>
           <Button
             type="button"
@@ -75,23 +75,23 @@ export default function SetupPage() {
             onClick={clear}
             className="mt-6 h-[52px] w-full rounded-full border border-border text-base"
           >
-            トークンを削除
+            Delete Token
           </Button>
           <p className={`${hintCls} mt-4`}>
-            サーバーには一切保存されません。生成のたびにこのブラウザから送信され、サーバーは中継にだけ使います。
+            It is never stored on the server. It is sent from this browser with each generation, and the server only relays it.
           </p>
           <p className={`${hintCls} mt-2`}>
-            保存はブラウザ／URL（オリジン）ごとです。別のブラウザや別の URL から使うときは再入力が必要で、ブラウザのデータを消すと再入力が必要になります。
+            Storage is per browser and per URL (origin). Using a different browser or URL requires entering it again, as does clearing your browser data.
           </p>
           <p className={`${hintCls} mt-2`}>
-            取得: novelai.net → Account Settings → Get Persistent API Token。チャットには送らないでください。
+            Get it at: novelai.net → Account Settings → Get Persistent API Token. Never send it in chat.
           </p>
           <div className="mt-6 flex items-center gap-3">
             <a
               href="./"
               className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground no-underline"
             >
-              ← 生成画面へ戻る
+              ← Back to Generate
             </a>
             <ThemeToggle />
           </div>

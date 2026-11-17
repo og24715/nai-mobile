@@ -15,7 +15,7 @@ export function FabRow({ generating, onGenerate, onOpenForm }: Props) {
     <div className="fixed right-5 bottom-5 z-40 flex gap-3">
       <Button
         type="button"
-        aria-label="生成する"
+        aria-label="Generate"
         disabled={generating}
         onClick={onGenerate}
         className="h-[60px] w-[60px] rounded-full p-0 text-[24px] shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
@@ -25,7 +25,7 @@ export function FabRow({ generating, onGenerate, onOpenForm }: Props) {
       <Button
         type="button"
         variant="secondary"
-        aria-label="生成フォームを開く"
+        aria-label="Open the generation form"
         onClick={onOpenForm}
         className="h-[60px] w-[60px] rounded-full border border-border p-0 text-[24px] shadow-[0_6px_20px_rgba(0,0,0,0.5)]"
       >

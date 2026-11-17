@@ -28,11 +28,11 @@ export function FormModal({ open, onRequestClose, children }: Props) {
       <DrawerContent className="bg-background [--drawer-content-max-height:92dvh] [--drawer-height:92dvh]">
         <div className="mx-auto min-h-0 w-full max-w-[640px] flex-1 overflow-y-auto px-5 pt-2 pb-16">
           <div className="flex items-center justify-between">
-            <DrawerTitle className="text-2xl font-semibold">生成</DrawerTitle>
+            <DrawerTitle className="text-2xl font-semibold">Generate</DrawerTitle>
             <Button
               type="button"
               variant="secondary"
-              aria-label="閉じる"
+              aria-label="Close"
               onClick={onRequestClose}
               className="h-11 w-11 rounded-full border border-border p-0 text-[22px]"
             >
@@ -45,7 +45,7 @@ export function FormModal({ open, onRequestClose, children }: Props) {
               href="setup"
               className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground no-underline"
             >
-              ⚙ 設定
+              ⚙ Settings
             </a>
             <ThemeToggle />
           </div>

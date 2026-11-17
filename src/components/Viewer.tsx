@@ -56,18 +56,18 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
           </ContextMenuTrigger>
           <ContextMenuContent>
             <ContextMenuItem disabled={upscaling} onClick={onUpscale}>
-              アップスケール
+              Upscale
             </ContextMenuItem>
             <ContextMenuItem disabled={enhancing} onClick={onEnhance}>
-              エンハンス
+              Enhance
             </ContextMenuItem>
             <ContextMenuItem onClick={onRestoreHero}>
-              この画像から復元
+              Restore from This Image
             </ContextMenuItem>
             <ContextMenuItem
               onClick={() => window.open(heroUrl, "_blank", "noopener,noreferrer")}
             >
-              元画像を開く
+              Open Original
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
@@ -89,7 +89,7 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
             dialog; nothing is uploaded. */}
         <div className="mt-1 flex flex-wrap items-center gap-1">
           <label className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-            画像から復元
+            Restore from Image
             <input
               type="file"
               accept="image/png,image/*"
@@ -107,12 +107,12 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRest
               onClick={onRestoreHero}
               className="inline-flex cursor-pointer items-center rounded-full px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
-              この画像から復元
+              Restore from This Image
             </button>
           )}
         </div>
         <section className="mb-14">
-          <h2 className="mb-3 text-xl font-semibold">最近の生成</h2>
+          <h2 className="mb-3 text-xl font-semibold">Recent</h2>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {items.map((it) => (
               <a

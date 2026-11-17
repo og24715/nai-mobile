@@ -108,9 +108,9 @@ const labelCls = "mb-1.5 block text-sm font-medium text-muted-foreground";
 // Precise Reference types (improvement #45): the value is the
 // API's description base_caption string; the label is the UI text.
 const REF_TYPES = [
-  { value: "character", label: "キャラクター" },
-  { value: "style", label: "スタイル" },
-  { value: "character&style", label: "両方" },
+  { value: "character", label: "Character" },
+  { value: "style", label: "Style" },
+  { value: "character&style", label: "Both" },
 ];
 
 function numOr(v: string, fallback: number): number {
@@ -269,7 +269,7 @@ export function GenerateForm({ form }: { form: FormState }) {
     <Accordion multiple value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
         <AccordionTrigger className="py-3.5 text-xl font-semibold">
-          プロンプト
+          Prompt
         </AccordionTrigger>
         <AccordionContent>
           <div className={sectionContentCls}>
@@ -280,8 +280,8 @@ export function GenerateForm({ form }: { form: FormState }) {
                 tabs never loses either text. */}
             <Tabs defaultValue="positive">
               <TabsList className="h-10 w-full">
-                <TabsTrigger value="positive">ポジティブ</TabsTrigger>
-                <TabsTrigger value="negative">ネガティブ</TabsTrigger>
+                <TabsTrigger value="positive">Positive</TabsTrigger>
+                <TabsTrigger value="negative">Negative</TabsTrigger>
               </TabsList>
               <TabsContent value="positive">
                 <TagField
@@ -308,14 +308,14 @@ export function GenerateForm({ form }: { form: FormState }) {
 
       <AccordionItem value="settings">
         <AccordionTrigger className="py-3.5 text-xl font-semibold">
-          基本設定
+          Settings
         </AccordionTrigger>
         <AccordionContent>
           <div className={sectionContentCls}>
             {/* Basic settings are a single full-width column —
                 every field stacked vertically, never side by side. */}
             <div>
-              <Label className={labelCls}>モデル</Label>
+              <Label className={labelCls}>Model</Label>
               <Select
                 items={MODELS}
                 value={form.model}
@@ -335,7 +335,7 @@ export function GenerateForm({ form }: { form: FormState }) {
             </div>
 
             <div>
-              <Label className={labelCls}>サイズ</Label>
+              <Label className={labelCls}>Size</Label>
               <Select
                 items={SIZES}
                 value={form.size}
@@ -389,7 +389,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 </span>
                 {stepsOver && (
                   <span className="ml-1.5 text-xs font-medium text-amber-500">
-                    Anlas消費
+                    Uses Anlas
                   </span>
                 )}
               </Label>
@@ -421,7 +421,7 @@ export function GenerateForm({ form }: { form: FormState }) {
 
             <div>
               <Label htmlFor="seed" className={labelCls}>
-                Seed（空=ランダム）
+                Seed (blank = random)
               </Label>
               <Input
                 id="seed"
@@ -442,7 +442,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 sliders below it only exist while attached. */}
             <div>
               <Label className={labelCls}>
-                ベース画像
+                Base Image
                 {form.baseImage && (
                   <span className="ml-1.5 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
                     img2img
@@ -457,12 +457,12 @@ export function GenerateForm({ form }: { form: FormState }) {
                   <AttachmentContent>
                     <AttachmentTitle>{form.baseImage.name}</AttachmentTitle>
                     <AttachmentDescription>
-                      この画像をベースに生成します
+                      Generate from this image
                     </AttachmentDescription>
                   </AttachmentContent>
                   <AttachmentActions>
                     <AttachmentAction
-                      aria-label="ベース画像を外す"
+                      aria-label="Remove base image"
                       onClick={form.onClearBaseImage}
                     >
                       <X />
@@ -471,7 +471,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 </Attachment>
               ) : (
                 <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
-                  画像を選ぶ
+                  Choose Image
                   <input
                     type="file"
                     accept="image/*"
@@ -527,9 +527,9 @@ export function GenerateForm({ form }: { form: FormState }) {
 
       <AccordionItem value="characters">
         <AccordionTrigger className="py-3.5 text-xl font-semibold">
-          キャラクター
+          Characters
           <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-            （V4以降）
+            (V4 and up)
           </span>
         </AccordionTrigger>
         <AccordionContent>
@@ -537,11 +537,11 @@ export function GenerateForm({ form }: { form: FormState }) {
             {form.chars.map((c, i) => (
               <div key={i} className="mt-4 rounded-xl border border-border p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">キャラ{i + 1}</span>
+                  <span className="text-sm text-muted-foreground">Char {i + 1}</span>
                   <Button
                     type="button"
                     variant="secondary"
-                    aria-label={`キャラ${i + 1}を削除`}
+                    aria-label={`Remove character ${i + 1}`}
                     onClick={() => removeChar(i)}
                     className="h-9 w-9 rounded-full border border-border p-0 text-base"
                   >
@@ -557,8 +557,8 @@ export function GenerateForm({ form }: { form: FormState }) {
                     selected tab is not persisted. */}
                 <Tabs defaultValue="positive" className="mt-2">
                   <TabsList className="h-9 w-full">
-                    <TabsTrigger value="positive">ポジティブ</TabsTrigger>
-                    <TabsTrigger value="negative">ネガティブ</TabsTrigger>
+                    <TabsTrigger value="positive">Positive</TabsTrigger>
+                    <TabsTrigger value="negative">Negative</TabsTrigger>
                   </TabsList>
                   <TabsContent value="positive">
                     <TagField
@@ -590,7 +590,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 onClick={addChar}
                 className="mt-6 h-[52px] w-full rounded-full border border-border text-base"
               >
-                ＋ キャラ追加
+                + Add Character
               </Button>
             )}
           </div>
@@ -599,7 +599,7 @@ export function GenerateForm({ form }: { form: FormState }) {
 
       <AccordionItem value="references">
         <AccordionTrigger className="py-3.5 text-xl font-semibold">
-          参照画像
+          Reference Images
         </AccordionTrigger>
         <AccordionContent>
           <div className={sectionContentCls}>
@@ -614,7 +614,7 @@ export function GenerateForm({ form }: { form: FormState }) {
               <Label className={labelCls}>Vibe Transfer</Label>
               {!caps.vibeTransfer && (
                 <p className="mb-2 text-xs text-muted-foreground">
-                  このモデルでは使えません
+                  Not available for this model
                 </p>
               )}
               <div
@@ -635,7 +635,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                       </AttachmentContent>
                       <AttachmentActions>
                         <AttachmentAction
-                          aria-label="参照画像を外す"
+                          aria-label="Remove reference image"
                           onClick={() => form.onRemoveVibe(v.id)}
                         >
                           <X />
@@ -676,7 +676,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 ))}
                 {form.vibes.length < 4 && (
                   <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
-                    ＋ 参照を追加
+                    + Add Reference
                     <input
                       type="file"
                       accept="image/*"
@@ -690,7 +690,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                   </label>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  エンコードに 2 Anlas/枚（初回のみ）
+                  Encoding costs 2 Anlas per image (first time only)
                 </p>
               </div>
             </div>
@@ -706,7 +706,7 @@ export function GenerateForm({ form }: { form: FormState }) {
               <Label className={labelCls}>Precise Reference</Label>
               {!caps.preciseReference && (
                 <p className="mb-2 text-xs text-muted-foreground">
-                  このモデルでは使えません
+                  Not available for this model
                 </p>
               )}
               <div
@@ -727,7 +727,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                       </AttachmentContent>
                       <AttachmentActions>
                         <AttachmentAction
-                          aria-label="参照画像を外す"
+                          aria-label="Remove reference image"
                           onClick={() => form.onRemoveRef(r.id)}
                         >
                           <X />
@@ -735,7 +735,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                       </AttachmentActions>
                     </Attachment>
                     <div>
-                      <Label className={labelCls}>タイプ</Label>
+                      <Label className={labelCls}>Type</Label>
                       <Select
                         items={REF_TYPES}
                         value={r.type}
@@ -787,7 +787,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 ))}
                 {form.refs.length < 4 && (
                   <label className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-border bg-secondary text-base text-secondary-foreground transition-colors hover:bg-accent hover:text-accent-foreground">
-                    ＋ 参照を追加
+                    + Add Reference
                     <input
                       type="file"
                       accept="image/*"

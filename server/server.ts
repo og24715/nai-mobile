@@ -443,7 +443,7 @@ const server = http.createServer(async (req, res) => {
       // from them and never displays the raw numbers.
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
       const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 30_000);
       let resp: Response;
       try {
@@ -451,11 +451,11 @@ const server = http.createServer(async (req, res) => {
           headers: { Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0" } });
       } catch {
         clearTimeout(timer);
-        sendJson(res, 502, { ok: false, error: "NovelAI API への接続に失敗しました" }); return;
+        sendJson(res, 502, { ok: false, error: "Failed to connect to the NovelAI API" }); return;
       }
       clearTimeout(timer);
       if (!resp.ok) {
-        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: your token may be invalid. Check it and save it again from ⚙ Settings." }); return; }
         sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}` }); return;
       }
       const data = (await resp.json()) as {
@@ -611,25 +611,25 @@ const server = http.createServer(async (req, res) => {
       // used in memory for this one upstream call only.
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
       const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; model?: unknown; blurSigma?: unknown };
       const name = typeof body.name === "string" ? body.name : "";
       // The name must be a file actually present in outputs/ —
       // exact match against the directory listing, so no path
       // traversal is possible.
       const listed = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"));
-      if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "対象の画像が見つかりません" }); return; }
+      if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "Image not found" }); return; }
       // Since the V5 launch the standalone upscaler accepts ONLY
       // V5 models (V4.5 and older are rejected upstream), so the
       // model is validated here instead of failing obscurely.
       const UPSCALE_MODELS = new Set(["nai-diffusion-5-full", "nai-diffusion-5-curated"]);
       const model = typeof body.model === "string" ? body.model : "";
-      if (!UPSCALE_MODELS.has(model)) { sendJson(res, 400, { ok: false, error: "アップスケールはV5モデル専用です（V4.5以下は非対応）" }); return; }
+      if (!UPSCALE_MODELS.has(model)) { sendJson(res, 400, { ok: false, error: "Upscale is V5-only (V4.5 and below are not supported)" }); return; }
       // declared_blur_sigma takes only these discrete values
       // (the generation-side rounding set); absent means 0.
       const BLUR_SIGMAS = new Set([0, 0.3, 0.35, 0.4, 0.45, 0.5]);
       const blurSigma = body.blurSigma === undefined ? 0 : Number(body.blurSigma);
-      if (!BLUR_SIGMAS.has(blurSigma)) { sendJson(res, 400, { ok: false, error: "ブラーシグマの値が不正です" }); return; }
+      if (!BLUR_SIGMAS.has(blurSigma)) { sendJson(res, 400, { ok: false, error: "Invalid blur sigma value" }); return; }
       const png = fs.readFileSync(path.join(OUTPUTS, name));
       // Current upstream protocol (changed with the V5 launch;
       // the old JSON + base64 body is answered with a 401): a
@@ -658,7 +658,7 @@ const server = http.createServer(async (req, res) => {
       clearTimeout(timer);
       if (!resp.ok) {
         const text = (await resp.text()).slice(0, 500);
-        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: your token may be invalid. Check it and save it again from ⚙ Settings." }); return; }
         sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
       }
       // Default response is a zip of PNGs (same as generate-image);
@@ -676,7 +676,7 @@ const server = http.createServer(async (req, res) => {
           if (fname.toLowerCase().endsWith(".png")) { outPng = Buffer.from(data); break; }
         }
       }
-      if (!outPng) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
+      if (!outPng) { sendJson(res, 502, { ok: false, error: "The API response contained no PNG" }); return; }
       const base = name.replace(/\.png$/i, "");
       let out = `${base}_up.png`;
       for (let n = 2; fs.existsSync(path.join(OUTPUTS, out)); n++) out = `${base}_up${n}.png`;
@@ -693,17 +693,17 @@ const server = http.createServer(async (req, res) => {
       // relay as generate/upscale; nothing is stored server-side.
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
       const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; scale?: unknown; strength?: unknown; noise?: unknown };
       const name = typeof body.name === "string" ? body.name : "";
       // Same outputs/ exact-match validation as the upscale route.
       const listed = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"));
-      if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "対象の画像が見つかりません" }); return; }
+      if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "Image not found" }); return; }
       const scaleSel = body.scale;
-      if (!(scaleSel === 2 || scaleSel === 1.5 || scaleSel === 1 || scaleSel === "max")) { sendJson(res, 400, { ok: false, error: "倍率の値が不正です" }); return; }
+      if (!(scaleSel === 2 || scaleSel === 1.5 || scaleSel === 1 || scaleSel === "max")) { sendJson(res, 400, { ok: false, error: "Invalid scale value" }); return; }
       const strength = Number(body.strength);
       const noise = Number(body.noise);
-      if (!Number.isFinite(strength) || strength < 0 || strength > 1 || !Number.isFinite(noise) || noise < 0 || noise > 1) { sendJson(res, 400, { ok: false, error: "Strength / Noise の値が不正です" }); return; }
+      if (!Number.isFinite(strength) || strength < 0 || strength > 1 || !Number.isFinite(noise) || noise < 0 || noise > 1) { sendJson(res, 400, { ok: false, error: "Invalid Strength / Noise value" }); return; }
       const png = fs.readFileSync(path.join(OUTPUTS, name));
       // The payload is built from the image's own Comment metadata
       // (it embeds the full generation parameters). No Comment =
@@ -712,7 +712,7 @@ const server = http.createServer(async (req, res) => {
       const commentRaw = extractPngText(png)?.get("Comment");
       if (commentRaw) { try { meta = JSON.parse(commentRaw) as Record<string, unknown>; } catch { meta = {}; } }
       const srcPrompt = typeof meta.prompt === "string" ? meta.prompt : "";
-      if (!srcPrompt) { sendJson(res, 400, { ok: false, error: "この画像に設定が入っていません" }); return; }
+      if (!srcPrompt) { sendJson(res, 400, { ok: false, error: "This image has no settings embedded" }); return; }
       // Model: mapped from the metadata's display name (Full
       // variants; the metadata carries no Full/Curated split).
       // Unmappable names fall back to V4.5 Full.
@@ -723,7 +723,7 @@ const server = http.createServer(async (req, res) => {
         : displayName.includes("V3") ? "nai-diffusion-3"
         : "nai-diffusion-4-5-full";
       const isV5 = model.startsWith("nai-diffusion-5");
-      if (scaleSel === "max" && !isV5) { sendJson(res, 400, { ok: false, error: "MAXはV5モデルで生成した画像専用です" }); return; }
+      if (scaleSel === "max" && !isV5) { sendJson(res, 400, { ok: false, error: "MAX is only for images generated with a V5 model" }); return; }
       // Target size. Source dims come from the PNG IHDR (the
       // actual pixels); scaled dims are rounded to multiples of
       // 64 and capped at 3,145,728 px total, per the official
@@ -732,7 +732,7 @@ const server = http.createServer(async (req, res) => {
       // (aspect-fitted to the same cap).
       const srcW = png.length >= 24 ? png.readUInt32BE(16) : 0;
       const srcH = png.length >= 24 ? png.readUInt32BE(20) : 0;
-      if (!srcW || !srcH) { sendJson(res, 400, { ok: false, error: "画像サイズが取得できませんでした" }); return; }
+      if (!srcW || !srcH) { sendJson(res, 400, { ok: false, error: "Could not read the image size" }); return; }
       const round64 = (n: number) => Math.max(64, Math.round(n / 64) * 64);
       const PX_CAP = 3_145_728;
       let width: number; let height: number; let upscaledEnhance = false;
@@ -740,7 +740,7 @@ const server = http.createServer(async (req, res) => {
         width = round64(srcW); height = round64(srcH); upscaledEnhance = true;
       } else {
         width = round64(srcW * scaleSel); height = round64(srcH * scaleSel);
-        if (width * height > PX_CAP) { sendJson(res, 400, { ok: false, error: "拡大後のサイズが上限を超えています" }); return; }
+        if (width * height > PX_CAP) { sendJson(res, 400, { ok: false, error: "The scaled size exceeds the limit" }); return; }
       }
       const num = (v: unknown, dflt: number) => (typeof v === "number" && Number.isFinite(v) ? v : dflt);
       const parameters: Record<string, unknown> = {
@@ -812,7 +812,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!resp.ok) {
         const text = (await resp.text()).slice(0, 500);
-        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: your token may be invalid. Check it and save it again from ⚙ Settings." }); return; }
         sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
       }
       const zip = new Uint8Array(await resp.arrayBuffer());
@@ -821,7 +821,7 @@ const server = http.createServer(async (req, res) => {
       for (const [fname, data] of Object.entries(files)) {
         if (fname.toLowerCase().endsWith(".png")) { outPng = Buffer.from(data); break; }
       }
-      if (!outPng) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
+      if (!outPng) { sendJson(res, 502, { ok: false, error: "The API response contained no PNG" }); return; }
       const base = name.replace(/\.png$/i, "");
       let out = `${base}_enh.png`;
       for (let n = 2; fs.existsSync(path.join(OUTPUTS, out)); n++) out = `${base}_enh${n}.png`;
@@ -841,10 +841,10 @@ const server = http.createServer(async (req, res) => {
       // upstream; the client caches per (file, model, info).
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
       const body = JSON.parse((await readBody(req, 40_000_000)).toString("utf8")) as { image?: unknown; model?: unknown; informationExtracted?: unknown };
       const image = typeof body.image === "string" ? body.image.replace(/^data:image\/[a-z+]+;base64,/i, "") : "";
-      if (!image) { sendJson(res, 400, { ok: false, error: "画像がありません" }); return; }
+      if (!image) { sendJson(res, 400, { ok: false, error: "No image provided" }); return; }
       const model = typeof body.model === "string" && body.model ? body.model : "nai-diffusion-4-5-full";
       const info = clamp01(Number(body.informationExtracted), 1);
       const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
@@ -860,11 +860,11 @@ const server = http.createServer(async (req, res) => {
       clearTimeout(timer);
       if (!resp.ok) {
         const text = (await resp.text()).slice(0, 500);
-        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: your token may be invalid. Check it and save it again from ⚙ Settings." }); return; }
         sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
       }
       const buf = Buffer.from(await resp.arrayBuffer());
-      if (!buf.length) { sendJson(res, 502, { ok: false, error: "API応答が空でした" }); return; }
+      if (!buf.length) { sendJson(res, 502, { ok: false, error: "The API response was empty" }); return; }
       sendJson(res, 200, { ok: true, vibe: buf.toString("base64") }); return;
     }
     if (req.method === "POST" && p === "api/generate") {
@@ -872,9 +872,9 @@ const server = http.createServer(async (req, res) => {
       // used only in memory for this one upstream call. Never persisted.
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
+      if (token.length < 10) { sendJson(res, 401, { ok: false, error: "API token is not set. Open ⚙ Settings and save your Persistent API Token." }); return; }
       const g = JSON.parse((await readBody(req, 24_000_000)).toString("utf8")) as GenInput;
-      if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "プロンプトが空です" }); return; }
+      if (!String(g.prompt || "").trim()) { sendJson(res, 400, { ok: false, error: "The prompt is empty" }); return; }
       const { payload, seed } = buildPayload(g);
       let usedSeed: number | null = seed;
       const callNAI = async (): Promise<Response> => {
@@ -910,7 +910,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!resp.ok) {
         const text = (await resp.text()).slice(0, 500);
-        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: トークンが無効かもしれません。モーダルの ⚙ 設定からトークンを確認・保存し直してください。" }); return; }
+        if (resp.status === 401) { sendJson(res, 401, { ok: false, error: "NovelAI API 401: your token may be invalid. Check it and save it again from ⚙ Settings." }); return; }
         sendJson(res, 502, { ok: false, error: `NovelAI API ${resp.status}: ${text}` }); return;
       }
       const zip = new Uint8Array(await resp.arrayBuffer());
@@ -919,7 +919,7 @@ const server = http.createServer(async (req, res) => {
       for (const [name, data] of Object.entries(files)) {
         if (name.toLowerCase().endsWith(".png")) pngs.push(Buffer.from(data));
       }
-      if (!pngs.length) { sendJson(res, 502, { ok: false, error: "API応答にPNGが含まれていませんでした" }); return; }
+      if (!pngs.length) { sendJson(res, 502, { ok: false, error: "The API response contained no PNG" }); return; }
       // Recover the seed NovelAI actually used from the returned
       // PNG's Comment metadata (it embeds the full parameters).
       if (usedSeed == null) {

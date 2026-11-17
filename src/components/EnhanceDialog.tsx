@@ -87,7 +87,7 @@ export function EnhanceDialog({
 
   const sizePreview =
     scaleSel === "max"
-      ? "自動で最大化（V5専用）"
+      ? "Auto maximize (V5 only)"
       : `${round64(sourceWidth * scaleSel)} × ${round64(sourceHeight * scaleSel)}`;
 
   return (
@@ -99,14 +99,14 @@ export function EnhanceDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl">エンハンス</DialogTitle>
+          <DialogTitle className="text-xl">Enhance</DialogTitle>
           <DialogDescription>
-            元画像のプロンプト設定で再生成します・Anlasを消費します
+            Regenerates with the source image's own prompt settings. Uses Anlas.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-[18px]">
           <div>
-            <Label className={labelCls}>倍率</Label>
+            <Label className={labelCls}>Scale</Label>
             <div className="flex flex-wrap gap-2">
               {scales.map((s) => (
                 <button
@@ -171,13 +171,13 @@ export function EnhanceDialog({
         </div>
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={onCancel}>
-            キャンセル
+            Cancel
           </Button>
           <Button
             type="button"
             onClick={() => onExecute(scaleSel, strength, noise)}
           >
-            エンハンス
+            Enhance
           </Button>
         </DialogFooter>
       </DialogContent>

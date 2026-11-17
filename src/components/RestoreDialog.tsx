@@ -66,29 +66,29 @@ function groupsOf(r: RestoredForm): GroupDef[] {
   return [
     {
       key: "prompt",
-      label: "プロンプト",
+      label: "Prompt",
       present: r.prompt !== undefined,
       preview: r.prompt !== undefined ? snippet(r.prompt) : "",
     },
     {
       key: "negative",
-      label: "ネガティブ",
+      label: "Negative",
       present: r.negative !== undefined,
       preview: r.negative !== undefined ? snippet(r.negative) : "",
     },
     {
       key: "chars",
-      label: "キャラクター",
+      label: "Characters",
       present: r.chars !== undefined,
       preview:
         r.chars !== undefined
-          ? `${r.chars.length}件` +
+          ? `${r.chars.length} chars` +
             (r.chars[0]?.prompt ? `: ${snippet(r.chars[0].prompt)}` : "")
           : "",
     },
     {
       key: "settings",
-      label: "基本設定",
+      label: "Settings",
       present: hasSettings,
       preview: hasSettings ? settingsSummary(r) : "",
     },
@@ -140,9 +140,9 @@ export function RestoreDialog({ restored, onApply, onCancel }: Props) {
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl">画像から復元</DialogTitle>
+          <DialogTitle className="text-xl">Restore from Image</DialogTitle>
           <DialogDescription>
-            取り込む項目を選んでください。
+            Choose what to import.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1">
@@ -168,7 +168,7 @@ export function RestoreDialog({ restored, onApply, onCancel }: Props) {
                   {g.label}
                   {!g.present && (
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      なし
+                      None
                     </span>
                   )}
                 </span>
@@ -183,10 +183,10 @@ export function RestoreDialog({ restored, onApply, onCancel }: Props) {
         </div>
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={onCancel}>
-            キャンセル
+            Cancel
           </Button>
           <Button type="button" onClick={() => onApply(sel)}>
-            取り込む
+            Import
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -13,9 +13,9 @@ export const MODELS = [
 ];
 
 export const SIZES = [
-  { value: "832x1216", label: "832 × 1216（縦）" },
-  { value: "1216x832", label: "1216 × 832（横）" },
-  { value: "1024x1024", label: "1024 × 1024（正方形）" },
+  { value: "832x1216", label: "832 × 1216 (Portrait)" },
+  { value: "1216x832", label: "1216 × 832 (Landscape)" },
+  { value: "1024x1024", label: "1024 × 1024 (Square)" },
 ];
 
 export const SAMPLERS = [

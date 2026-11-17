@@ -37,7 +37,7 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
         <input
           type="text"
           value={draft}
-          aria-label="タグのテキスト"
+          aria-label="Tag text"
           enterKeyHint="done"
           autoComplete="off"
           autoCapitalize="off"
@@ -55,7 +55,7 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
         <Button
           type="button"
           variant="secondary"
-          aria-label="テキストを適用"
+          aria-label="Apply text"
           className="h-tap w-tap shrink-0 p-0"
           onClick={applyText}
         >
@@ -64,7 +64,7 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
         <Button
           type="button"
           variant="ghost"
-          aria-label="このタグを削除"
+          aria-label="Delete this tag"
           className="h-tap w-tap shrink-0 p-0 text-muted-foreground"
           onClick={editor.onDelete}
         >
@@ -73,7 +73,7 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
         <Button
           type="button"
           variant="ghost"
-          aria-label="タグ編集を閉じる"
+          aria-label="Close tag editor"
           className="h-tap w-tap shrink-0 p-0 text-muted-foreground"
           onClick={editor.onClose}
         >
@@ -83,14 +83,14 @@ export function ChipEditorBar({ editor }: { editor: ChipEditorState }) {
       {!editor.raw && editor.character && (
         <div className="flex flex-wrap items-center gap-1.5">
           <select
-            aria-label="接頭辞"
+            aria-label="Prefix"
             value={editor.prefix ?? ""}
             onChange={(e) =>
               editor.onPrefix(e.target.value === "" ? null : e.target.value)
             }
             className="h-tap rounded-md border border-input bg-background px-1.5 text-sm"
           >
-            <option value="">接頭辞なし</option>
+            <option value="">No prefix</option>
             <option value="source">source#</option>
             <option value="target">target#</option>
             <option value="mutual">mutual#</option>

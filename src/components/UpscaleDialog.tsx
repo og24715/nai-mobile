@@ -72,14 +72,14 @@ export function UpscaleDialog({ open, defaultModel, onExecute, onCancel }: Props
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="text-xl">アップスケール</DialogTitle>
+          <DialogTitle className="text-xl">Upscale</DialogTitle>
           <DialogDescription>
-            V5専用（V4.5以下は非対応）
+            V5 only (V4.5 and below are not supported)
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-[18px]">
           <div>
-            <Label className={labelCls}>モデル</Label>
+            <Label className={labelCls}>Model</Label>
             <Select
               items={V5_MODELS}
               value={model}
@@ -98,7 +98,7 @@ export function UpscaleDialog({ open, defaultModel, onExecute, onCancel }: Props
             </Select>
           </div>
           <div>
-            <Label className={labelCls}>ブラーシグマ</Label>
+            <Label className={labelCls}>Blur Sigma</Label>
             <Select
               items={BLUR_SIGMAS}
               value={sigma}
@@ -119,13 +119,13 @@ export function UpscaleDialog({ open, defaultModel, onExecute, onCancel }: Props
         </div>
         <DialogFooter>
           <Button type="button" variant="secondary" onClick={onCancel}>
-            キャンセル
+            Cancel
           </Button>
           <Button
             type="button"
             onClick={() => onExecute(model, Number(sigma))}
           >
-            アップスケール
+            Upscale
           </Button>
         </DialogFooter>
       </DialogContent>

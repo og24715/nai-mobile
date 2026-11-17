@@ -229,7 +229,7 @@ export default function MainPage() {
   const restoreFromFile = async (file: File) => {
     const settings = await readNaiSettings(file).catch(() => null);
     if (!settings) {
-      setStatus({ kind: "err", text: "この画像に設定が入っていません" });
+      setStatus({ kind: "err", text: "This image has no settings embedded" });
       return;
     }
     setPendingRestore(mapSettingsToForm(settings, model));
@@ -250,7 +250,7 @@ export default function MainPage() {
       const name = decodeURIComponent(heroUrl.split("/").pop() || "image.png");
       file = new File([blob], name, { type: blob.type || "image/png" });
     } catch (e) {
-      setStatus({ kind: "err", text: "通信エラー: " + e });
+      setStatus({ kind: "err", text: "Network error: " + e });
       return;
     }
     await restoreFromFile(file);
@@ -271,7 +271,7 @@ export default function MainPage() {
     }
     if (sel.seed && r.seed !== undefined) setSeed(r.seed);
     setPendingRestore(null);
-    setStatus({ kind: "ok", text: "画像から設定を復元しました" });
+    setStatus({ kind: "ok", text: "Settings restored from the image" });
     openModal();
   };
 
@@ -297,19 +297,19 @@ export default function MainPage() {
     const name = decodeURIComponent(heroUrl.split("/").pop() || "");
     if (!name) return;
     setUpscaling(true);
-    setStatus({ kind: "", text: "アップスケール中…" });
+    setStatus({ kind: "", text: "Upscaling…" });
     try {
       const { status: httpStatus, json: j } = await requestUpscale(token, name, upModel, blurSigma);
       if (!j.ok) {
-        setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
+        setStatus({ kind: "err", text: "Error: " + (j.error || httpStatus) });
       } else {
-        setStatus({ kind: "ok", text: "アップスケールしました" });
+        setStatus({ kind: "ok", text: "Upscaled" });
         if (j.item) setHeroUrl(j.item.url);
         void refreshRecent();
         void refreshSubscription();
       }
     } catch (e) {
-      setStatus({ kind: "err", text: "通信エラー: " + e });
+      setStatus({ kind: "err", text: "Network error: " + e });
     }
     setUpscaling(false);
   };
@@ -331,19 +331,19 @@ export default function MainPage() {
     const name = decodeURIComponent(heroUrl.split("/").pop() || "");
     if (!name) return;
     setEnhancing(true);
-    setStatus({ kind: "", text: "エンハンス中…" });
+    setStatus({ kind: "", text: "Enhancing…" });
     try {
       const { status: httpStatus, json: j } = await requestEnhance(token, name, enhScale, strength, noise);
       if (!j.ok) {
-        setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
+        setStatus({ kind: "err", text: "Error: " + (j.error || httpStatus) });
       } else {
-        setStatus({ kind: "ok", text: "エンハンスしました" });
+        setStatus({ kind: "ok", text: "Enhanced" });
         if (j.item) setHeroUrl(j.item.url);
         void refreshRecent();
         void refreshSubscription();
       }
     } catch (e) {
-      setStatus({ kind: "err", text: "通信エラー: " + e });
+      setStatus({ kind: "err", text: "Network error: " + e });
     }
     setEnhancing(false);
   };
@@ -356,7 +356,7 @@ export default function MainPage() {
     }
     closeModal();
     window.scrollTo(0, 0);
-    setStatus({ kind: "", text: "生成中…（数十秒かかることがあります）" });
+    setStatus({ kind: "", text: "Generating… (this can take a while)" });
     setGenerating(true);
     const [w, h] = size.split("x").map(Number);
     // img2img (#43): with a base image attached, convert it to a
@@ -367,7 +367,7 @@ export default function MainPage() {
       try {
         image = await fileToCoverPngBase64(baseImage.file, w, h);
       } catch {
-        setStatus({ kind: "err", text: "ベース画像を読み込めませんでした" });
+        setStatus({ kind: "err", text: "Could not load the base image" });
         setGenerating(false);
         return;
       }
@@ -383,19 +383,19 @@ export default function MainPage() {
         const key = vibeKey(v, model);
         let enc = vibeCache.current.get(key);
         if (!enc) {
-          setStatus({ kind: "", text: "Vibeをエンコード中…" });
+          setStatus({ kind: "", text: "Encoding vibes…" });
           try {
             const b64 = await fileToBase64(v.file);
             const { status: hs, json: j } = await requestEncodeVibe(token, b64, model, v.info);
             if (!j.ok || !j.vibe) {
-              setStatus({ kind: "err", text: "エラー: " + (j.error || hs) });
+              setStatus({ kind: "err", text: "Error: " + (j.error || hs) });
               setGenerating(false);
               return;
             }
             enc = j.vibe;
             vibeCache.current.set(key, enc);
           } catch (e) {
-            setStatus({ kind: "err", text: "通信エラー: " + e });
+            setStatus({ kind: "err", text: "Network error: " + e });
             setGenerating(false);
             return;
           }
@@ -403,7 +403,7 @@ export default function MainPage() {
         encoded.push({ encoded: enc, strength: v.strength, informationExtracted: v.info });
       }
       vibePayload = encoded;
-      setStatus({ kind: "", text: "生成中…（数十秒かかることがあります）" });
+      setStatus({ kind: "", text: "Generating… (this can take a while)" });
     }
     // Precise Reference (#45): downscale each entry to a 1024px
     // long side and send the set; the server expands it into
@@ -417,7 +417,7 @@ export default function MainPage() {
           refPayload.push({ image: b64, type: r.type, strength: r.strength, fidelity: r.fidelity });
         }
       } catch {
-        setStatus({ kind: "err", text: "参照画像を読み込めませんでした" });
+        setStatus({ kind: "err", text: "Could not load a reference image" });
         setGenerating(false);
         return;
       }
@@ -444,15 +444,15 @@ export default function MainPage() {
     try {
       const { status: httpStatus, json: j } = await requestGenerate(token, body);
       if (!j.ok) {
-        setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
+        setStatus({ kind: "err", text: "Error: " + (j.error || httpStatus) });
       } else {
-        setStatus({ kind: "ok", text: j.seed != null ? "完了 seed=" + j.seed : "完了" });
+        setStatus({ kind: "ok", text: j.seed != null ? "Done seed=" + j.seed : "Done" });
         if (j.images && j.images.length) setHeroUrl(j.images[0]);
         void refreshRecent();
         void refreshSubscription();
       }
     } catch (e) {
-      setStatus({ kind: "err", text: "通信エラー: " + e });
+      setStatus({ kind: "err", text: "Network error: " + e });
     }
     setGenerating(false);
   };

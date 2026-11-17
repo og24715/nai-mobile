@@ -24,7 +24,7 @@ export function ThemeToggle() {
     <Button
       type="button"
       variant="secondary"
-      aria-label={dark ? "ライトテーマに切り替え" : "ダークテーマに切り替え"}
+      aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
       onClick={toggle}
       className="h-9 w-9 rounded-full border border-border p-0"
     >

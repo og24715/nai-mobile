@@ -179,7 +179,7 @@ export function TagField({
         >
           <span>{s.name}</span>
           {s.mine > 0 ? (
-            <span className="text-xs font-medium text-primary">よく使う</span>
+            <span className="text-xs font-medium text-primary">Frequently Used</span>
           ) : s.count !== null ? (
             <span className="text-tag-badge text-muted-foreground">
               {fmtCount(s.count)}
@@ -322,7 +322,7 @@ export function TagField({
             >
               <button
                 type="button"
-                aria-label={`${c.text} の重みを下げる`}
+                aria-label={`Decrease the weight of ${c.text}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   stepChip(c, -0.1);
@@ -352,7 +352,7 @@ export function TagField({
               </button>
               <button
                 type="button"
-                aria-label={`${c.text} の重みを上げる`}
+                aria-label={`Increase the weight of ${c.text}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   stepChip(c, 0.1);
@@ -368,8 +368,8 @@ export function TagField({
           ref={addRef}
           type="text"
           value={addText}
-          aria-label="タグを追加"
-          placeholder="タグを追加"
+          aria-label="Add tag"
+          placeholder="Add tag"
           enterKeyHint="done"
           autoComplete="off"
           autoCapitalize="off"
