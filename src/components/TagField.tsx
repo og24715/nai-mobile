@@ -77,7 +77,7 @@ function fmtCount(n: number): string {
 // pick COMMITS immediately (#65): it runs the same setChipText
 // path as ✓ / Enter (prefix preserved, section split included)
 // and then closes the Popover. Typing only edits the draft; ✓ /
-// Enter still commits the draft without closing.
+// Enter commits the draft and closes the Popover too (#66).
 function ChipEditorContent({
   chip,
   character,
@@ -418,18 +418,16 @@ export function TagField({
     const r = setChipText(segs, c.seg, c.tag, t);
     if (r.segs !== segs) {
       onChange(serializePrompt(r.segs));
-      // Follow the (possibly split-out) chip so its popover stays
-      // open on it; no select target means the text was empty and
-      // the chip is gone, so the popover closes.
-      setOpenChip(r.select ?? null);
     }
+    // Committing the draft closes the Popover (#66) — it no
+    // longer follows the (possibly split-out) chip. Empty text
+    // deletes the chip and closes as well, as it did before.
+    setOpenChip(null);
   };
   // Suggestion picks in the chip editor (#65): the same commit as
-  // applyText, but the Popover closes instead of following the
-  // (possibly split-out) chip.
+  // applyText — since #66 both paths close the Popover.
   const applySuggestionText = (c: Chip, t: string) => {
     applyText(c, t);
-    setOpenChip(null);
   };
   const applyDelete = (c: Chip) => {
     onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
