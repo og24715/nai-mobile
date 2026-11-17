@@ -131,7 +131,10 @@ button:disabled{opacity:.5}button.sub{background:var(--surface2);color:var(--tex
 .hint{font-size:12px;color:var(--muted)}
 .toprow{display:flex;justify-content:flex-end;margin-bottom:8px}.settings{color:var(--muted);text-decoration:none;font-size:13px;border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface)}
 .val{color:var(--text);font-weight:600}input[type=range]{padding:0;accent-color:var(--accent)}
-</style></head><body><main>
+.hero{line-height:0}.hero img{width:100%;height:auto;display:block}
+</style></head><body>
+<div class="hero" id="heroWrap" hidden><a id="heroLink" href="" target="_blank" rel="noopener"><img id="heroImg" alt=""></a></div>
+<main>
 <div class="toprow"><a class="settings" href="setup">⚙ 設定</a></div>
 
 <section><div class="card">
@@ -181,13 +184,14 @@ function syncVal(id,vid,fmt){const el=$(id),s=$(vid);const f=()=>{s.textContent=
 syncVal('steps','stepsVal',v=>String(Math.round(v)));
 syncVal('scale','scaleVal',v=>v.toFixed(1));
 async function checkToken(){try{const r=await fetch('api/status');const j=await r.json();if(!j.hasToken){location.replace('setup');}}catch(e){}}
-async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';for(const it of j.items){const a=document.createElement('a');a.href=it.url;a.target='_blank';const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);$('recent').appendChild(a);}}catch(e){}}
+function setHero(url){if(!url){$('heroWrap').hidden=true;return;}$('heroImg').src=url;$('heroLink').href=url;$('heroWrap').hidden=false;}
+async function recent(){try{const r=await fetch('api/recent');const j=await r.json();$('recent').innerHTML='';setHero(j.items&&j.items.length?j.items[0].url:'');for(const it of j.items){const a=document.createElement('a');a.href=it.url;const im=document.createElement('img');im.src=it.url;im.loading='lazy';a.appendChild(im);a.addEventListener('click',e=>{e.preventDefault();setHero(it.url);window.scrollTo({top:0,behavior:'smooth'});});$('recent').appendChild(a);}}catch(e){}}
 $('gen').onclick=async()=>{const st=$('status');st.className='status';st.textContent='生成中…（数十秒かかることがあります）';$('gen').disabled=true;
 const [w,h]=$('size').value.split('x').map(Number);
 const body={prompt:$('prompt').value,negative:$('negative').value,model:$('model').value,width:w,height:h,steps:Number($('steps').value),scale:Number($('scale').value),sampler:$('sampler').value,seed:$('seed').value===''?null:Number($('seed').value),characters:[{prompt:$('char1').value,negative:$('char1neg').value},{prompt:$('char2').value,negative:$('char2neg').value}]};
 try{const r=await fetch('api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();
 if(!j.ok){st.className='status err';st.textContent='エラー: '+(j.error||r.status);}
-else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);$('result').innerHTML='';for(const u of j.images){const a=document.createElement('a');a.href=u;a.target='_blank';const im=document.createElement('img');im.src=u;a.appendChild(im);$('result').appendChild(a);}recent();}
+else{st.className='status ok';st.textContent='完了 seed='+j.seed;$('seed').value=j.seed;localStorage.setItem('nai.seed',j.seed);$('result').innerHTML='';for(const u of j.images){const a=document.createElement('a');a.href=u;a.target='_blank';const im=document.createElement('img');im.src=u;a.appendChild(im);$('result').appendChild(a);}if(j.images&&j.images.length)setHero(j.images[0]);recent();}
 }catch(e){st.className='status err';st.textContent='通信エラー: '+e;}
 $('gen').disabled=false;};
 checkToken();recent();
