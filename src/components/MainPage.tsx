@@ -80,12 +80,26 @@ export default function MainPage() {
   const vibeSeq = useRef(0);
   const vibeKey = (v: VibeEntry, m: string) =>
     `${v.file.name}:${v.file.size}:${v.file.lastModified}|${m}|${v.info}`;
-  const addVibe = (f: File) => {
-    setVibes((prev) =>
-      prev.length >= 4
-        ? prev
-        : [...prev, { id: ++vibeSeq.current, file: f, url: URL.createObjectURL(f), strength: 0.6, info: 1 }],
-    );
+  // Multi-select add (improvement #52): every picked file becomes
+  // its own entry in pick order, up to the 4-entry cap; files past
+  // the cap are dropped with a note in the status line.
+  const addVibe = (files: File[]) => {
+    const take = files.slice(0, Math.max(0, 4 - vibes.length));
+    if (take.length < files.length) {
+      setStatus({ kind: "", text: "Up to 4 reference images" });
+    }
+    if (take.length > 0) {
+      setVibes([
+        ...vibes,
+        ...take.map((f) => ({
+          id: ++vibeSeq.current,
+          file: f,
+          url: URL.createObjectURL(f),
+          strength: 0.6,
+          info: 1,
+        })),
+      ]);
+    }
   };
   const removeVibe = (id: number) => {
     setVibes((prev) => {
@@ -111,12 +125,25 @@ export default function MainPage() {
   }
   const [refs, setRefs] = useState<RefEntry[]>([]);
   const refSeq = useRef(0);
-  const addRef = (f: File) => {
-    setRefs((prev) =>
-      prev.length >= 4
-        ? prev
-        : [...prev, { id: ++refSeq.current, file: f, url: URL.createObjectURL(f), type: "character", strength: 0.7, fidelity: 0.5 }],
-    );
+  // Multi-select add (improvement #52): same pattern as vibes.
+  const addRef = (files: File[]) => {
+    const take = files.slice(0, Math.max(0, 4 - refs.length));
+    if (take.length < files.length) {
+      setStatus({ kind: "", text: "Up to 4 reference images" });
+    }
+    if (take.length > 0) {
+      setRefs([
+        ...refs,
+        ...take.map((f) => ({
+          id: ++refSeq.current,
+          file: f,
+          url: URL.createObjectURL(f),
+          type: "character",
+          strength: 0.7,
+          fidelity: 0.5,
+        })),
+      ]);
+    }
   };
   const removeRef = (id: number) => {
     setRefs((prev) => {

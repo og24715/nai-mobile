@@ -79,7 +79,7 @@ export interface FormState {
     strength: number;
     info: number;
   }[];
-  onAddVibe: (f: File) => void;
+  onAddVibe: (files: File[]) => void;
   onRemoveVibe: (id: number) => void;
   onUpdateVibe: (id: number, patch: { strength?: number; info?: number }) => void;
   refs: {
@@ -90,7 +90,7 @@ export interface FormState {
     strength: number;
     fidelity: number;
   }[];
-  onAddRef: (f: File) => void;
+  onAddRef: (files: File[]) => void;
   onRemoveRef: (id: number) => void;
   onUpdateRef: (
     id: number,
@@ -640,11 +640,14 @@ export function GenerateForm({ form }: { form: FormState }) {
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={(e) => {
-                        const f = e.target.files?.[0];
+                        const files = e.target.files
+                          ? Array.from(e.target.files)
+                          : [];
                         e.target.value = "";
-                        if (f) form.onAddVibe(f);
+                        if (files.length) form.onAddVibe(files);
                       }}
                     />
                   </label>
@@ -754,11 +757,14 @@ export function GenerateForm({ form }: { form: FormState }) {
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       className="hidden"
                       onChange={(e) => {
-                        const f = e.target.files?.[0];
+                        const files = e.target.files
+                          ? Array.from(e.target.files)
+                          : [];
                         e.target.value = "";
-                        if (f) form.onAddRef(f);
+                        if (files.length) form.onAddRef(files);
                       }}
                     />
                   </label>
