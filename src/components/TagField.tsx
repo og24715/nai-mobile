@@ -1,14 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "cn";
 import {
   deleteChip,
@@ -20,7 +10,6 @@ import {
   setChipText,
   setChipWeight,
   splitPrefix,
-  splitWeightedSections,
 } from "@/lib/promptTags";
 import { fetchTagSuggestions, type TagSuggestion } from "@/lib/api";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
@@ -78,13 +67,10 @@ function fmtCount(n: number): string {
 // #26, #28): the chips plus an inline "add tag" input with the
 // suggestion strip (#22) are the whole editing UI — there is no
 // free-text textarea anymore. A chip's own text is edited in the
-// shared editor bar (see ChipEditorBar / setChipText), and bulk text
-// enters through the 貼り付け dialog (normalized by
-// splitWeightedSections, like image restore) or leaves through the
-// コピー button. The field's string value remains the single source
-// of truth: chips are derived from it on every render, and every edit
-// rewrites it through the same setter, so persistence and generation
-// payloads are untouched.
+// shared editor bar (see ChipEditorBar / setChipText). The field's
+// string value remains the single source of truth: chips are derived
+// from it on every render, and every edit rewrites it through the
+// same setter, so persistence and generation payloads are untouched.
 export function TagField({
   fieldId,
   value,
@@ -202,71 +188,6 @@ export function TagField({
     </div>
   );
 
-  // --- Paste import / copy ----------------------------------------------
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const applyPaste = (mode: "replace" | "append") => {
-    // Imported text goes through the same section-splitting
-    // normalization as image restore (#27), so pasted prompts land
-    // as clean per-tag chips.
-    const frag = splitWeightedSections(pasteText.trim());
-    if (frag.trim()) {
-      if (mode === "replace") {
-        onChange(frag);
-      } else {
-        const base = value.replace(/\s+$/, "");
-        let next: string;
-        if (!base) next = frag;
-        else if (base.endsWith(",")) next = base + " " + frag;
-        else next = base + ", " + frag;
-        onChange(next);
-      }
-      // Indices may shift under an import; drop the chip selection
-      // rather than risk the editor bar acting on the wrong tag.
-      onChipSelect(fieldId, null);
-    }
-    setPasteText("");
-    setPasteOpen(false);
-  };
-
-  const copyValue = async () => {
-    let ok = false;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(value);
-        ok = true;
-      }
-    } catch {
-      ok = false;
-    }
-    if (!ok) {
-      // The page is served over plain http (non-secure context), where
-      // the Clipboard API is often unavailable; fall back to a
-      // temporary textarea + execCommand.
-      const ta = document.createElement("textarea");
-      ta.value = value;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      try {
-        ok = document.execCommand("copy");
-      } catch {
-        ok = false;
-      }
-      document.body.removeChild(ta);
-    }
-    if (ok) {
-      setCopied(true);
-      if (copiedTimer.current) clearTimeout(copiedTimer.current);
-      copiedTimer.current = setTimeout(() => setCopied(false), 1500);
-    }
-  };
-
   // --- Chip editor (state lifted to GenerateForm, #26) ------------------
   const applyWeight = (w: number) => {
     if (!selChip) return;
@@ -336,27 +257,6 @@ export function TagField({
 
   return (
     <div>
-      {/* Field chrome: bulk text in/out. Free-text editing is gone
-          (#28); paste import and copy live here instead. */}
-      <div className="mb-1.5 flex items-center justify-end gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-8 px-2 text-[13px] font-normal text-muted-foreground"
-          onClick={() => setPasteOpen(true)}
-        >
-          貼り付け
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="h-8 px-2 text-[13px] font-normal text-muted-foreground"
-          onClick={() => void copyValue()}
-        >
-          {copied ? "コピーしました" : "コピー"}
-        </Button>
-      </div>
-
       {/* Chips + add-tag input: the only editing UI. */}
       <div className="flex flex-wrap items-center gap-2">
         {chips.map((c) => {
@@ -435,39 +335,6 @@ export function TagField({
       </div>
 
       {strip}
-
-      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>プロンプトを貼り付け</DialogTitle>
-            <DialogDescription>
-              貼り付けたテキストは、重みセクションをタグごとに分割して取り込まれます。
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={pasteText}
-            onChange={(e) => setPasteText(e.target.value)}
-            placeholder="1girl, ..."
-            className="min-h-[120px] text-base"
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => applyPaste("append")}
-            >
-              末尾に追加
-            </Button>
-            <Button type="button" onClick={() => applyPaste("replace")}>
-              置き換える
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
