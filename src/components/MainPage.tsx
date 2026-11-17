@@ -4,6 +4,7 @@ import { FabRow } from "@/components/FabRow";
 import { FormModal } from "@/components/FormModal";
 import { GenerateForm, type FormState } from "@/components/GenerateForm";
 import { RestoreDialog, type RestoreSelection } from "@/components/RestoreDialog";
+import { UpscaleDialog } from "@/components/UpscaleDialog";
 import { Viewer, type StatusState } from "@/components/Viewer";
 import { useCharacters } from "@/hooks/useCharacters";
 import { usePersistedField } from "@/hooks/usePersistedField";
@@ -46,6 +47,9 @@ export default function MainPage() {
   // Parsed settings from a picked device image, waiting for the
   // user to choose which groups to import (improvement #31).
   const [pendingRestore, setPendingRestore] = useState<RestoredForm | null>(null);
+  // Upscale parameter dialog (improvement #41): opened from the
+  // hero context menu; the run itself happens on execute.
+  const [upscaleOpen, setUpscaleOpen] = useState(false);
   // True while a history entry pushed by openModal is on the stack.
   const modalHist = useRef(false);
 
@@ -177,12 +181,14 @@ export default function MainPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Upscale the hero image (improvement #39): the server relays
-  // the outputs/ file to NovelAI's standalone upscaler and saves
-  // the result as a new outputs/ entry, which then becomes the
-  // hero. Upscaling consumes Anlas, so the allowance bars are
-  // refreshed alongside the recent list.
-  const upscaleHero = async () => {
+  // Upscale the hero image (improvements #39 + #41): the context
+  // menu item first opens the parameter dialog (V5 model +
+  // blur sigma); on execute the server relays the outputs/ file
+  // to NovelAI's standalone upscaler and saves the result as a
+  // new outputs/ entry, which then becomes the hero. Upscaling
+  // consumes Anlas, so the allowance bars are refreshed alongside
+  // the recent list.
+  const upscaleHero = async (upModel: string, blurSigma: number) => {
     if (!heroUrl || upscaling) return;
     const token = readStored(TOKEN_KEY);
     if (!token) {
@@ -194,7 +200,7 @@ export default function MainPage() {
     setUpscaling(true);
     setStatus({ kind: "", text: "アップスケール中…" });
     try {
-      const { status: httpStatus, json: j } = await requestUpscale(token, name, model);
+      const { status: httpStatus, json: j } = await requestUpscale(token, name, upModel, blurSigma);
       if (!j.ok) {
         setStatus({ kind: "err", text: "エラー: " + (j.error || httpStatus) });
       } else {
@@ -276,7 +282,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} onUpscale={upscaleHero} upscaling={upscaling} />
+      <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
@@ -285,6 +291,15 @@ export default function MainPage() {
         restored={pendingRestore}
         onApply={applyRestore}
         onCancel={() => setPendingRestore(null)}
+      />
+      <UpscaleDialog
+        open={upscaleOpen}
+        defaultModel={model}
+        onCancel={() => setUpscaleOpen(false)}
+        onExecute={(upModel, blurSigma) => {
+          setUpscaleOpen(false);
+          void upscaleHero(upModel, blurSigma);
+        }}
       />
     </>
   );

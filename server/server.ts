@@ -526,37 +526,52 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, headers); res.end(data); return;
     }
     if (req.method === "POST" && p === "api/upscale") {
-      // Upscale (improvement #39): relay one outputs/ image to
+      // Upscale (improvements #39 + #41): relay one outputs/ image to
       // NovelAI's standalone upscaler. Same token pattern as
       // generate: the browser's token arrives per-request and is
       // used in memory for this one upstream call only.
       const auth = String(req.headers.authorization || "");
       const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
       if (token.length < 10) { sendJson(res, 401, { ok: false, error: "APIトークンが未設定です。モーダルの ⚙ 設定から Persistent API Token を保存してください。" }); return; }
-      const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; model?: unknown };
+      const body = JSON.parse((await readBody(req)).toString("utf8")) as { name?: unknown; model?: unknown; blurSigma?: unknown };
       const name = typeof body.name === "string" ? body.name : "";
       // The name must be a file actually present in outputs/ —
       // exact match against the directory listing, so no path
       // traversal is possible.
       const listed = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"));
       if (!name || !listed.includes(name)) { sendJson(res, 400, { ok: false, error: "対象の画像が見つかりません" }); return; }
+      // Since the V5 launch the standalone upscaler accepts ONLY
+      // V5 models (V4.5 and older are rejected upstream), so the
+      // model is validated here instead of failing obscurely.
+      const UPSCALE_MODELS = new Set(["nai-diffusion-5-full", "nai-diffusion-5-curated"]);
+      const model = typeof body.model === "string" ? body.model : "";
+      if (!UPSCALE_MODELS.has(model)) { sendJson(res, 400, { ok: false, error: "アップスケールはV5モデル専用です（V4.5以下は非対応）" }); return; }
+      // declared_blur_sigma takes only these discrete values
+      // (the generation-side rounding set); absent means 0.
+      const BLUR_SIGMAS = new Set([0, 0.3, 0.35, 0.4, 0.45, 0.5]);
+      const blurSigma = body.blurSigma === undefined ? 0 : Number(body.blurSigma);
+      if (!BLUR_SIGMAS.has(blurSigma)) { sendJson(res, 400, { ok: false, error: "ブラーシグマの値が不正です" }); return; }
       const png = fs.readFileSync(path.join(OUTPUTS, name));
-      // OpenAPI contract (image.UpscaleRequest): the only fields
-      // are image (base64 string), model (an image model API name)
-      // and the optional declared_blur_sigma. There is NO scale,
-      // width or height field — the upscaler's factor is fixed —
-      // so only image + model are sent and blur sigma is left at
-      // the schema default (absent). The model is the one selected
-      // in the client's form: the source PNG's metadata carries
-      // only a display name ("NovelAI Diffusion V5"), not the API
-      // name, so it cannot be recovered server-side.
-      const model = typeof body.model === "string" && body.model ? body.model : "nai-diffusion-4-5-full";
+      // Current upstream protocol (changed with the V5 launch;
+      // the old JSON + base64 body is answered with a 401): a
+      // MULTIPART form with the PNG as file part "image"
+      // (filename "blob") and a JSON file part "request" whose
+      // "image" value is the literal string "image", pointing at
+      // the file part. There is NO scale field — the factor is
+      // fixed. Content-Type is left unset so fetch fills in the
+      // multipart boundary.
+      const form = new FormData();
+      form.append("image", new Blob([png], { type: "image/png" }), "blob");
+      form.append("request", new Blob(
+        [JSON.stringify({ image: "image", model, declared_blur_sigma: blurSigma })],
+        { type: "application/json" },
+      ), "request.json");
       const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 180_000);
       let resp: Response;
       try {
         resp = await fetch(UPSCALE_URL, { method: "POST", signal: ctrl.signal,
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, "User-Agent": UA },
-          body: JSON.stringify({ image: png.toString("base64"), model }) });
+          headers: { Authorization: `Bearer ${token}`, "User-Agent": UA, Accept: "application/x-zip-compressed" },
+          body: form });
       } catch (e) {
         clearTimeout(timer);
         sendJson(res, 500, { ok: false, error: String((e as Error)?.message || e) }); return;

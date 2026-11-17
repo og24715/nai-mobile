@@ -178,12 +178,15 @@ export interface UpscaleResponse {
 }
 
 // Upscale one outputs/ image via the server's relay to NovelAI's
-// standalone upscaler (improvement #39). The file stays on the PC —
-// only its name is sent; the server reads it from outputs/.
+// standalone upscaler (improvements #39 + #41). The file stays on
+// the PC — only its name is sent; the server reads it from
+// outputs/. The upscaler is V5-only and takes a declared_blur_sigma
+// from a small discrete set, chosen in the upscale dialog.
 export async function requestUpscale(
   token: string,
   name: string,
   model: string,
+  blurSigma: number,
 ): Promise<{ status: number; json: UpscaleResponse }> {
   const r = await fetch("api/upscale", {
     method: "POST",
@@ -191,7 +194,7 @@ export async function requestUpscale(
       "Content-Type": "application/json",
       Authorization: "Bearer " + token,
     },
-    body: JSON.stringify({ name, model }),
+    body: JSON.stringify({ name, model, blurSigma }),
   });
   return { status: r.status, json: (await r.json()) as UpscaleResponse };
 }

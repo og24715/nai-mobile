@@ -28,7 +28,8 @@ interface Props {
 // hero; tapping the hero opens the original in a new tab. Long-
 // pressing the hero (right-click on desktop) opens a context menu
 // with upscale / restore-from-this-image / open-original actions
-// (improvement #39).
+// (improvement #39); the upscale item opens a parameter dialog
+// first (improvement #41).
 export function Viewer({ heroUrl, status, items, onSelect, onRestoreFile, onRestoreHero, onUpscale, upscaling }: Props) {
   return (
     <>
