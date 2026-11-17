@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AllowanceBar } from "@/components/AllowanceBar";
+import { AllowanceBars } from "@/components/AllowanceBar";
 import { FabRow } from "@/components/FabRow";
 import { FormModal } from "@/components/FormModal";
 import { GenerateForm, type FormState } from "@/components/GenerateForm";
@@ -13,7 +13,7 @@ import {
   requestGenerate,
   type GenerateRequest,
   type RecentItem,
-  type SubscriptionUsage,
+  type SubscriptionInfo,
 } from "@/lib/api";
 import { DEFAULT_NEGATIVE } from "@/lib/options";
 import {
@@ -36,7 +36,7 @@ export default function MainPage() {
   const [chars, updateChars] = useCharacters();
 
   const [heroUrl, setHeroUrl] = useState("");
-  const [usage, setUsage] = useState<SubscriptionUsage | null>(null);
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [items, setItems] = useState<RecentItem[]>([]);
   const [status, setStatus] = useState<StatusState>({ kind: "", text: "" });
   const [generating, setGenerating] = useState(false);
@@ -57,17 +57,18 @@ export default function MainPage() {
     }
   }, []);
 
-  // Allowance for the thin bar at the very top of the screen. Any failure
-  // (or a non-Opus account without a usage allowance) leaves it
-  // null and the bar simply isn't rendered.
+  // Subscription allowances for the thin bars at the very top of
+  // the screen. Any failure leaves the info null and the bars
+  // simply aren't rendered; each bar also hides itself when its
+  // own source field is absent from the response.
   const refreshSubscription = useCallback(async () => {
     const token = readStored(TOKEN_KEY);
     if (!token) {
-      setUsage(null);
+      setSubscription(null);
       return;
     }
     const info = await fetchSubscription(token);
-    setUsage(info ? info.usage : null);
+    setSubscription(info);
   }, []);
 
   // Unregistered (no token in this browser): go to the setup page.
@@ -240,7 +241,7 @@ export default function MainPage() {
 
   return (
     <>
-      {usage && <AllowanceBar usage={usage} />}
+      {subscription && <AllowanceBars subscription={subscription} />}
       <Viewer heroUrl={heroUrl} status={status} items={items} onSelect={selectThumb} onRestoreFile={restoreFromFile} onRestoreHero={restoreFromHero} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>

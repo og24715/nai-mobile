@@ -1,36 +1,87 @@
 import { Progress as ProgressPrimitive } from "@base-ui/react/progress";
 import { ProgressIndicator, ProgressTrack } from "@/components/ui/progress";
 import { cn } from "cn";
-import type { SubscriptionUsage } from "@/lib/api";
+import {
+  anlasAllowanceFromSubscription,
+  type SubscriptionInfo,
+} from "@/lib/api";
 
-// Thin bar at the very top of the main screen, above the hero
-// image, showing how much of the Opus V5
-// free allowance remains. Color is the only signal — no numbers,
-// no percent text, no Anlas figure anywhere (the user asked for
-// exactly that):
+type Tone = "normal" | "low" | "empty";
+
+function toneFor(percent: number, empty: boolean): Tone {
+  if (empty || percent <= 0) return "empty";
+  return percent <= 20 ? "low" : "normal";
+}
+
+// One labelled thin bar. The tiny text label is the only text —
+// no numbers, no percent, no raw balance anywhere (the user has
+// repeatedly declined numeric display). Color carries the state:
 //   > 20% remaining ....... primary at muted intensity
 //   <= 20% ................ amber (running low)
-//   empty / isNegative .... red (generations now burn Anlas)
+//   empty ................. red
 // The track from shadcn's Progress is already h-1 (~4px).
-export function AllowanceBar({ usage }: { usage: SubscriptionUsage }) {
-  const width = Math.min(100, Math.max(0, usage.percent));
-  const state =
-    usage.isNegative || usage.percent <= 0
-      ? "empty"
-      : usage.percent <= 20
-        ? "low"
-        : "normal";
+function AllowanceRow({
+  label,
+  percent,
+  tone,
+}: {
+  label: string;
+  percent: number;
+  tone: Tone;
+}) {
+  const width = Math.min(100, Math.max(0, percent));
   return (
-    <ProgressPrimitive.Root value={width} className="w-full">
-      <ProgressTrack>
-        <ProgressIndicator
-          className={cn(
-            state === "normal" && "bg-primary/60",
-            state === "low" && "bg-amber-400",
-            state === "empty" && "bg-err",
-          )}
+    <div className="flex items-center gap-2">
+      <span className="w-16 shrink-0 text-xs text-muted-foreground">
+        {label}
+      </span>
+      <ProgressPrimitive.Root value={width} className="min-w-0 flex-1">
+        <ProgressTrack>
+          <ProgressIndicator
+            className={cn(
+              tone === "normal" && "bg-primary/60",
+              tone === "low" && "bg-amber-400",
+              tone === "empty" && "bg-err",
+            )}
+          />
+        </ProgressTrack>
+      </ProgressPrimitive.Root>
+    </div>
+  );
+}
+
+// Two thin allowance bars at the very top of the main screen,
+// above the hero image (not sticky):
+//   Opus Limit — the Opus V5 usage allowance (usage.percent
+//     remaining; isNegative means generations now burn Anlas).
+//   Anlas — the Anlas balance (subscription + purchased) against
+//     the tier's monthly Subscription Anlas allotment (#37).
+// Each bar hides itself when its source field is absent from the
+// subscription response; when both are absent nothing renders.
+export function AllowanceBars({
+  subscription,
+}: {
+  subscription: SubscriptionInfo;
+}) {
+  const usage = subscription.usage;
+  const anlas = anlasAllowanceFromSubscription(subscription);
+  if (!usage && !anlas) return null;
+  return (
+    <div className="w-full space-y-1.5 px-3 py-2">
+      {usage && (
+        <AllowanceRow
+          label="Opus Limit"
+          percent={usage.percent}
+          tone={toneFor(usage.percent, usage.isNegative)}
         />
-      </ProgressTrack>
-    </ProgressPrimitive.Root>
+      )}
+      {anlas && (
+        <AllowanceRow
+          label="Anlas"
+          percent={anlas.percent}
+          tone={toneFor(anlas.percent, false)}
+        />
+      )}
+    </div>
   );
 }

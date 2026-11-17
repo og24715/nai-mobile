@@ -384,12 +384,19 @@ const server = http.createServer(async (req, res) => {
         trainingStepsLeft?: { fixedTrainingStepsLeft?: number; purchasedTrainingSteps?: number };
         usage?: { percent?: number; isNegative?: boolean } | null;
       };
-      const tsl = data.trainingStepsLeft || {};
-      const anlasTotal = (Number(tsl.fixedTrainingStepsLeft) || 0) + (Number(tsl.purchasedTrainingSteps) || 0);
+      const trainingStepsLeft = data.trainingStepsLeft
+        ? {
+            fixedTrainingStepsLeft: Number(data.trainingStepsLeft.fixedTrainingStepsLeft) || 0,
+            purchasedTrainingSteps: Number(data.trainingStepsLeft.purchasedTrainingSteps) || 0,
+          }
+        : null;
+      const anlasTotal = trainingStepsLeft
+        ? trainingStepsLeft.fixedTrainingStepsLeft + trainingStepsLeft.purchasedTrainingSteps
+        : null;
       const usage = data.usage
         ? { percent: Number(data.usage.percent) || 0, isNegative: !!data.usage.isNegative }
         : null;
-      sendJson(res, 200, { tier: typeof data.tier === "number" ? data.tier : null, active: !!data.active, anlasTotal, usage }); return;
+      sendJson(res, 200, { tier: typeof data.tier === "number" ? data.tier : null, active: !!data.active, anlasTotal, trainingStepsLeft, usage }); return;
     }
     if (req.method === "GET" && p === "api/tags") {
       // Tag suggestions (improvement #22): NovelAI's official

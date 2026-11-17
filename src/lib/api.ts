@@ -32,11 +32,50 @@ export interface SubscriptionUsage {
   isNegative: boolean;
 }
 
+export interface TrainingStepsLeft {
+  fixedTrainingStepsLeft: number;
+  purchasedTrainingSteps: number;
+}
+
 export interface SubscriptionInfo {
   tier: number | null;
   active: boolean;
-  anlasTotal: number;
+  anlasTotal: number | null;
+  trainingStepsLeft: TrainingStepsLeft | null;
   usage: SubscriptionUsage | null;
+}
+
+export interface AnlasAllowance {
+  balance: number;
+  denominator: number;
+  percent: number;
+}
+
+// Monthly Subscription Anlas allotment for the Anlas bar's
+// full-scale denominator: Opus (tier 3) refills to 10,000;
+// Tablet / Scroll (tiers 1 / 2) refill to 1,000. Unknown tiers
+// fall back to the Opus figure.
+export function monthlyAnlasAllotment(tier: number | null): number {
+  if (tier === 1 || tier === 2) return 1000;
+  return 10000;
+}
+
+// The Anlas allowance behind the second bar (improvement #37):
+// balance is subscription Anlas + purchased Anlas. Null when the
+// subscription response carried no trainingStepsLeft at all, so
+// the bar can hide instead of showing a misleading empty state.
+export function anlasAllowanceFromSubscription(
+  info: SubscriptionInfo,
+): AnlasAllowance | null {
+  const tsl = info.trainingStepsLeft;
+  if (!tsl) return null;
+  const balance = tsl.fixedTrainingStepsLeft + tsl.purchasedTrainingSteps;
+  const denominator = monthlyAnlasAllotment(info.tier);
+  const percent =
+    denominator > 0
+      ? Math.min(100, Math.max(0, (balance / denominator) * 100))
+      : 0;
+  return { balance, denominator, percent };
 }
 
 // Returns null on any failure (no token, upstream error, offline) —
@@ -50,10 +89,22 @@ export async function fetchSubscription(
     });
     if (!r.ok) return null;
     const j = await r.json();
+    const trainingStepsLeft = j.trainingStepsLeft
+      ? {
+          fixedTrainingStepsLeft:
+            Number(j.trainingStepsLeft.fixedTrainingStepsLeft) || 0,
+          purchasedTrainingSteps:
+            Number(j.trainingStepsLeft.purchasedTrainingSteps) || 0,
+        }
+      : null;
     return {
       tier: typeof j.tier === "number" ? j.tier : null,
       active: !!j.active,
-      anlasTotal: Number(j.anlasTotal) || 0,
+      anlasTotal: trainingStepsLeft
+        ? trainingStepsLeft.fixedTrainingStepsLeft +
+          trainingStepsLeft.purchasedTrainingSteps
+        : null,
+      trainingStepsLeft,
       usage: j.usage
         ? {
             percent: Number(j.usage.percent) || 0,
