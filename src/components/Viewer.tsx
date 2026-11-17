@@ -5,6 +5,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "cn";
 
 export interface StatusState {
@@ -15,6 +16,11 @@ export interface StatusState {
 interface Props {
   heroUrl: string;
   status: StatusState;
+  // True while any operation that drives the status line is in
+  // flight (generation — including its Vibe-encoding phase —
+  // upscale, enhance): the status line shows a spinner (improvement
+  // #55).
+  busy: boolean;
   items: RecentItem[];
   onSelect: (url: string) => void;
   onRestoreHero: () => void;
@@ -32,7 +38,7 @@ interface Props {
 // with upscale / enhance / restore-from-this-image / open-original
 // actions (improvements #39 + #42); the upscale and enhance items
 // open parameter dialogs first (improvements #41 + #42).
-export function Viewer({ heroUrl, status, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad }: Props) {
+export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad }: Props) {
   return (
     <>
       {heroUrl && (
@@ -74,12 +80,13 @@ export function Viewer({ heroUrl, status, items, onSelect, onRestoreHero, onUpsc
       <main className="mx-auto max-w-[640px] px-5 pt-8 pb-32">
         <div
           className={cn(
-            "mt-4 text-sm whitespace-pre-wrap text-muted-foreground",
+            "mt-4 flex items-center gap-2 text-sm text-muted-foreground",
             status.kind === "err" && "text-err",
             status.kind === "ok" && "text-ok",
           )}
         >
-          {status.text}
+          {busy && <Spinner className="shrink-0" />}
+          <span className="whitespace-pre-wrap">{status.text}</span>
         </div>
         <section className="mb-14">
           <h2 className="mb-3 text-xl font-semibold">Recent</h2>
