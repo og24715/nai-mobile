@@ -30,7 +30,11 @@ import {
   readNaiSettings,
   type RestoredForm,
 } from "@/lib/pngSettings";
-import { flattenAlphaPng, stripPngTextChunks } from "@/lib/pngStrip";
+import {
+  flattenAlphaPng,
+  flattenAlphaPngSurgical,
+  stripPngTextChunks,
+} from "@/lib/pngStrip";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
 
 export default function MainPage() {
@@ -293,15 +297,16 @@ export default function MainPage() {
   };
 
   // Download the hero image with its metadata stripped
-  // (improvements #62 + #64): the PNG's text chunks carry the
-  // full prompt / seed / settings, and the same payload hides in
-  // the alpha channel's least significant bits. The image is
-  // therefore re-encoded through a canvas with its alpha forced
-  // fully opaque (which also drops every text chunk) and
-  // downloads as <name>_clean.png; if decode / export fails, the
-  // chunk-stripped bytes are used instead. Non-PNG input (not
-  // expected for outputs/) falls back to downloading the
-  // original unchanged.
+  // (improvements #62 + #64 + #67): the PNG's text chunks carry
+  // the full prompt / seed / settings, and the same payload
+  // hides in the alpha channel's least significant bits. The
+  // alpha is therefore flattened inside the IDAT stream itself
+  // (#67 — the canvas re-encode used at first, #64, inflated
+  // the file badly), and the result downloads as
+  // <name>_clean.png. Fallbacks, in order: the canvas flatten,
+  // then the chunk-stripped bytes. Non-PNG input (not expected
+  // for outputs/) falls back to downloading the original
+  // unchanged.
   const downloadCleanHero = async () => {
     if (!heroUrl) return;
     let blob: Blob;
@@ -317,13 +322,16 @@ export default function MainPage() {
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const cleaned = stripPngTextChunks(bytes);
     // A non-null result means the input is a well-formed PNG.
-    // Prefer the canvas re-encode (#64), which also wipes the
-    // alpha-channel stealth payload; fall back to the
-    // chunk-stripped bytes when decode / export is unavailable.
-    const flattened = cleaned ? await flattenAlphaPng(blob) : null;
-    const outBlob =
-      flattened ??
-      (cleaned ? new Blob([cleaned], { type: "image/png" }) : blob);
+    // Prefer the surgical IDAT-level alpha flatten (#67), which
+    // keeps the original compression; fall back to the canvas
+    // re-encode (#64), then to the chunk-stripped bytes.
+    const surgical = cleaned ? await flattenAlphaPngSurgical(bytes) : null;
+    const flattened =
+      !surgical && cleaned ? await flattenAlphaPng(blob) : null;
+    const outBlob = surgical
+      ? new Blob([surgical], { type: "image/png" })
+      : (flattened ??
+        (cleaned ? new Blob([cleaned], { type: "image/png" }) : blob));
     const outName = cleaned
       ? name.replace(/\.png$/i, "") + "_clean.png"
       : name;
