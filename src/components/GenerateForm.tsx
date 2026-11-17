@@ -148,45 +148,66 @@ export function GenerateForm({ form }: { form: FormState }) {
         </AccordionTrigger>
         <AccordionContent>
           <div className={sectionContentCls}>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className={labelCls}>モデル</Label>
-                <Select
-                  items={MODELS}
-                  value={form.model}
-                  onValueChange={(v) => v && form.setModel(v)}
-                >
-                  <SelectTrigger className="h-11 w-full text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODELS.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className={labelCls}>サイズ</Label>
-                <Select
-                  items={SIZES}
-                  value={form.size}
-                  onValueChange={(v) => v && form.setSize(v)}
-                >
-                  <SelectTrigger className="h-11 w-full text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SIZES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Basic settings are a single full-width column —
+                every field stacked vertically, never side by side. */}
+            <div>
+              <Label className={labelCls}>モデル</Label>
+              <Select
+                items={MODELS}
+                value={form.model}
+                onValueChange={(v) => v && form.setModel(v)}
+              >
+                <SelectTrigger className="h-11 w-full text-base">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MODELS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className={labelCls}>サイズ</Label>
+              <Select
+                items={SIZES}
+                value={form.size}
+                onValueChange={(v) => v && form.setSize(v)}
+              >
+                <SelectTrigger className="h-11 w-full text-base">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SIZES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className={labelCls}>Sampler</Label>
+              <Select
+                items={SAMPLERS}
+                value={form.sampler}
+                onValueChange={(v) => v && form.setSampler(v)}
+              >
+                <SelectTrigger className="h-11 w-full text-base">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SAMPLERS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Sliders are always stacked vertically, one full-width row
@@ -234,39 +255,18 @@ export function GenerateForm({ form }: { form: FormState }) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className={labelCls}>Sampler</Label>
-                <Select
-                  items={SAMPLERS}
-                  value={form.sampler}
-                  onValueChange={(v) => v && form.setSampler(v)}
-                >
-                  <SelectTrigger className="h-11 w-full text-base">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SAMPLERS.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>
-                        {s.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="seed" className={labelCls}>
-                  Seed（空=ランダム）
-                </Label>
-                <Input
-                  id="seed"
-                  type="number"
-                  placeholder="random"
-                  className="h-11 text-base"
-                  value={form.seed}
-                  onChange={(e) => form.setSeed(e.target.value)}
-                />
-              </div>
+            <div>
+              <Label htmlFor="seed" className={labelCls}>
+                Seed（空=ランダム）
+              </Label>
+              <Input
+                id="seed"
+                type="number"
+                placeholder="random"
+                className="h-11 text-base"
+                value={form.seed}
+                onChange={(e) => form.setSeed(e.target.value)}
+              />
             </div>
           </div>
         </AccordionContent>
