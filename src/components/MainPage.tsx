@@ -30,6 +30,7 @@ import {
   readNaiSettings,
   type RestoredForm,
 } from "@/lib/pngSettings";
+import { stripPngTextChunks } from "@/lib/pngStrip";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
 
 export default function MainPage() {
@@ -289,6 +290,44 @@ export default function MainPage() {
       return;
     }
     await restoreFromFile(file);
+  };
+
+  // Download the hero image with its metadata stripped
+  // (improvement #62): the PNG's text chunks carry the full
+  // prompt / seed / settings, so they are filtered out
+  // client-side and the cleaned bytes download as
+  // <name>_clean.png. Non-PNG input (not expected for outputs/)
+  // falls back to downloading the original unchanged.
+  const downloadCleanHero = async () => {
+    if (!heroUrl) return;
+    let blob: Blob;
+    try {
+      const r = await fetch(heroUrl);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      blob = await r.blob();
+    } catch (e) {
+      setStatus({ kind: "err", text: "Network error: " + e });
+      return;
+    }
+    const name = decodeURIComponent(heroUrl.split("/").pop() || "image.png");
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const cleaned = stripPngTextChunks(bytes);
+    const outBlob = cleaned
+      ? new Blob([cleaned], { type: "image/png" })
+      : blob;
+    const outName = cleaned
+      ? name.replace(/\.png$/i, "") + "_clean.png"
+      : name;
+    const url = URL.createObjectURL(outBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = outName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke after the browser has had time to start the download.
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setStatus({ kind: "ok", text: "Downloaded without metadata" });
   };
 
   const applyRestore = (sel: RestoreSelection) => {
@@ -619,7 +658,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
+      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(w, h) => setHeroSize({ url: heroUrl, w, h })} onDownloadClean={downloadCleanHero} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
