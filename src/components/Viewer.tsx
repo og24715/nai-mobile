@@ -1,5 +1,6 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Heart } from "lucide-react";
+import AutoHeight from "embla-carousel-auto-height";
 import type { RecentItem } from "@/lib/api";
 import {
   AlertDialog,
@@ -12,6 +13,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  type CarouselApi,
+} from "@/components/ui/carousel";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -41,7 +48,10 @@ interface Props {
   upscaling: boolean;
   onEnhance: () => void;
   enhancing: boolean;
-  onHeroLoad: (w: number, h: number) => void;
+  // Natural size of a loaded slide image, reported with the
+  // slide's own URL; the Enhance dialog reads the entry for the
+  // currently selected slide.
+  onHeroLoad: (url: string, w: number, h: number) => void;
   // Download the hero with its PNG text chunks stripped
   // (improvement #62).
   onDownloadClean: () => void;
@@ -59,11 +69,15 @@ interface Props {
   deletingOthers: boolean;
 }
 
-// Main screen: full-bleed hero image on top, status line, and the
-// recent-generations thumbnail grid. Tapping a thumbnail swaps the
-// hero; tapping the hero opens the original in a new tab. Long-
-// pressing the hero (right-click on desktop) opens a context menu
-// with upscale / enhance / restore-from-this-image / favorite /
+// Main screen: hero carousel on top, status line, and the
+// recent-generations thumbnail grid. The hero is a shadcn
+// Carousel (Embla) with one slide per recent item, newest first
+// — the same order as the thumbnail grid; swiping it moves
+// through the images, and tapping a thumbnail scrolls it to
+// that slide (improvement #71). Tapping the current slide
+// opens the original in a new tab. Long-pressing the hero
+// (right-click on desktop) opens a context menu with upscale /
+// enhance / restore-from-this-image / favorite /
 // open-original / download-without-metadata /
 // use-as-base-image actions (improvements #39 + #42 + #61 +
 // #62 + #63); the
@@ -72,140 +86,91 @@ interface Props {
 // button (bottom-right) toggling its favorite state, favorited
 // thumbnails get a heart badge, and the Recent header has a
 // "Delete Others" bulk-delete with a confirmation dialog
-// (improvement #61). A horizontal swipe on the hero navigates
-// through the loaded recent items — left to the next (older)
-// image, right to the previous (newer) one, no wrap-around
-// (improvement #71).
+// (improvement #61).
 export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // --- Swipe navigation on the hero (improvement #71) ---
-  // The image follows the finger horizontally; on release it
-  // switches once the drag passed SWIPE_THRESHOLD, otherwise it
-  // snaps back. Horizontal dominance is required so diagonal
-  // scrolls never engage it, and `touch-action: pan-y` (on the
-  // anchor below) keeps vertical page scrolling native while
-  // horizontal moves are delivered to these handlers.
-  const SWIPE_THRESHOLD = 48;
-  const SWIPE_SLOP = 8;
+  // --- Hero carousel selection sync (improvement #71) ---
+  // The carousel's selected snap IS the current image; it stays
+  // in sync with the heroUrl selection state both ways (the two
+  // effects below). Embla owns all touch interpretation — the
+  // original hand-rolled pointer-gesture version never engaged
+  // on the user's Android phone, so it was replaced wholesale.
+  // Embla also suppresses the click that follows a drag, so a
+  // swipe never opens the original, and its AutoHeight plugin
+  // sizes the viewport to the selected slide (the recent list
+  // mixes portrait / landscape / square images).
+  const [carouselApi, setCarouselApi] = useState<CarouselApi>();
+  const autoHeight = useRef(AutoHeight());
   const heroIndex = items.findIndex((i) => i.url === heroUrl);
-  const newerItem = heroIndex > 0 ? items[heroIndex - 1] : undefined;
-  const olderItem =
-    heroIndex >= 0 && heroIndex < items.length - 1
-      ? items[heroIndex + 1]
-      : undefined;
-  const [dragX, setDragX] = useState(0);
-  const [dragAnimate, setDragAnimate] = useState(false);
-  const gestureRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    dx: number;
-    decided: boolean;
-    horizontal: boolean;
-  } | null>(null);
-  // Set when a horizontal drag ends: the click the browser fires
-  // right after pointerup must not open the original.
-  const suppressClickRef = useRef(false);
+  // Latest values for the Embla callback, which is subscribed
+  // once per api instance and must never go stale.
+  const syncRef = useRef({ items, heroUrl, onSelect });
+  syncRef.current = { items, heroUrl, onSelect };
 
-  function onHeroPointerDown(e: ReactPointerEvent<HTMLAnchorElement>) {
-    if (gestureRef.current) return;
-    gestureRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      dx: 0,
-      decided: false,
-      horizontal: false,
+  // Carousel -> selection: settling on a new snap (a swipe)
+  // reports that slide's URL as the new selection.
+  useEffect(() => {
+    if (!carouselApi) return;
+    const onSelectSnap = () => {
+      const s = syncRef.current;
+      const it = s.items[carouselApi.selectedScrollSnap()];
+      if (it && it.url !== s.heroUrl) s.onSelect(it.url);
     };
-    setDragAnimate(false);
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // Pointer already gone; the move/up handlers just never run.
-    }
-  }
+    carouselApi.on("select", onSelectSnap);
+    return () => {
+      carouselApi.off("select", onSelectSnap);
+    };
+  }, [carouselApi]);
 
-  function onHeroPointerMove(e: ReactPointerEvent<HTMLAnchorElement>) {
-    const g = gestureRef.current;
-    if (!g || e.pointerId !== g.pointerId) return;
-    const dx = e.clientX - g.startX;
-    const dy = e.clientY - g.startY;
-    if (!g.decided) {
-      if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
-      g.decided = true;
-      g.horizontal = Math.abs(dx) > Math.abs(dy);
+  // Selection -> carousel: an outside change (thumbnail tap, a
+  // fresh generation / upscale / enhance result, the
+  // delete-others fallback) scrolls the carousel to match.
+  useEffect(() => {
+    if (!carouselApi || heroIndex < 0) return;
+    if (carouselApi.selectedScrollSnap() !== heroIndex) {
+      carouselApi.scrollTo(heroIndex);
     }
-    if (!g.horizontal) return;
-    g.dx = dx;
-    // Resistance when there is no image in the drag direction.
-    const target = dx < 0 ? olderItem : newerItem;
-    setDragX(target ? dx : dx * 0.35);
-  }
-
-  function onHeroPointerEnd(e: ReactPointerEvent<HTMLAnchorElement>, cancelled: boolean) {
-    const g = gestureRef.current;
-    if (!g || e.pointerId !== g.pointerId) return;
-    gestureRef.current = null;
-    if (!g.horizontal) {
-      setDragX(0);
-      return;
-    }
-    suppressClickRef.current = true;
-    const target =
-      !cancelled && Math.abs(g.dx) >= SWIPE_THRESHOLD
-        ? g.dx < 0
-          ? olderItem
-          : newerItem
-        : undefined;
-    setDragAnimate(true);
-    if (target) onSelect(target.url);
-    setDragX(0);
-  }
-
-  function onHeroClick(e: React.MouseEvent<HTMLAnchorElement>) {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      e.preventDefault();
-    }
-  }
+  }, [carouselApi, heroIndex, items]);
 
   return (
     <>
-      {heroUrl && (
-        <div className="relative overflow-hidden">
+      {items.length > 0 && (
+        <div className="relative">
           <ContextMenu>
             <ContextMenuTrigger className="block leading-none [-webkit-touch-callout:none]">
-              <a
-                href={heroUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="[touch-action:pan-y]"
-                onClick={onHeroClick}
-                onPointerDown={onHeroPointerDown}
-                onPointerMove={onHeroPointerMove}
-                onPointerUp={(e) => onHeroPointerEnd(e, false)}
-                onPointerCancel={(e) => onHeroPointerEnd(e, true)}
+              <Carousel
+                setApi={setCarouselApi}
+                opts={{ loop: false }}
+                plugins={[autoHeight.current]}
               >
-                <img
-                  src={heroUrl}
-                  alt=""
-                  draggable={false}
-                  onLoad={(e) =>
-                    onHeroLoad(
-                      e.currentTarget.naturalWidth,
-                      e.currentTarget.naturalHeight,
-                    )
-                  }
-                  style={{
-                    transform: `translateX(${dragX}px)`,
-                    transition: dragAnimate
-                      ? "transform 200ms ease-out"
-                      : undefined,
-                  }}
-                  className="block h-auto w-full [-webkit-touch-callout:none]"
-                />
-              </a>
+                <CarouselContent className="ml-0">
+                  {items.map((it) => (
+                    <CarouselItem key={it.name} className="pl-0">
+                      <a
+                        href={it.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block leading-none"
+                      >
+                        <img
+                          src={it.url}
+                          alt=""
+                          draggable={false}
+                          onLoad={(e) =>
+                            onHeroLoad(
+                              it.url,
+                              e.currentTarget.naturalWidth,
+                              e.currentTarget.naturalHeight,
+                            )
+                          }
+                          className="block h-auto w-full [-webkit-touch-callout:none]"
+                        />
+                      </a>
+                    </CarouselItem>
+                  ))}
+                </CarouselContent>
+              </Carousel>
             </ContextMenuTrigger>
             <ContextMenuContent>
               <ContextMenuItem disabled={upscaling} onClick={onUpscale}>
