@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Minus, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Minus, Plus, Trash2, X } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import {
@@ -281,11 +281,15 @@ function ChipEditorContent({
 // remains the single source of truth: chips are derived from it on
 // every render, and every edit rewrites it through the same setter,
 // so persistence and generation payloads are untouched.
-// Fields with many chips also get a filter box (improvement #68):
-// typing there only narrows which chips are RENDERED (substring,
-// case-insensitive); the value and the chips' original indices are
-// untouched, so editing through a filtered view behaves exactly as
-// unfiltered.
+// The add-tag input doubles as the chip filter (improvement #76,
+// unifying #68's separate filter box into it): typing narrows
+// which chips are RENDERED (substring, case-insensitive,
+// display-only — the value and the chips' original indices are
+// untouched, so editing through a filtered view behaves exactly
+// as unfiltered), and committing routes through one rule: a text
+// that exactly matches an existing chip ACTIVATES that chip
+// (opens its editor) instead of adding a duplicate; anything
+// else is appended as a new tag.
 export function TagField({
   fieldId,
   value,
@@ -304,41 +308,9 @@ export function TagField({
   const [openChip, setOpenChip] = useState<{ seg: number; tag: number } | null>(
     null,
   );
-
-  // --- Chip filter (improvement #68) ------------------------------------
-  // Display-only narrowing for long fields: the box appears once a
-  // field holds 10+ chips. The text is per-field component state,
-  // never persisted, and deliberately NOT reset when the value
-  // changes (stepper edits rewrite the value too and must keep the
-  // filter) — it simply filters whatever list is current.
-  const [filterText, setFilterText] = useState("");
-  const filterRef = useRef<HTMLInputElement | null>(null);
-  const showFilter = chips.length >= 10;
-  const needle = filterText.trim().toLowerCase();
-  const filtering = showFilter && needle !== "";
-  const visibleChips = useMemo(
-    () =>
-      filtering
-        ? chips.filter((c) => c.text.toLowerCase().includes(needle))
-        : chips,
-    [chips, filtering, needle],
-  );
-
-  // If the chip whose editor is open falls out of the filtered
-  // view, close the editor — its anchor is no longer rendered.
-  useEffect(() => {
-    if (!openChip) return;
-    const visible = visibleChips.some(
-      (c) => c.seg === openChip.seg && c.tag === openChip.tag,
-    );
-    if (!visible) setOpenChip(null);
-  }, [visibleChips, openChip]);
-
-  const clearFilter = () => {
-    setFilterText("");
-    // Keep focus in the filter box, mirroring the add input (#49).
-    requestAnimationFrame(() => filterRef.current?.focus());
-  };
+  // The field's root element; chip activation (#76) scrolls the
+  // matched chip into view through it.
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   // --- Suggestions (add-tag input only) --------------------------------
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -381,6 +353,33 @@ export function TagField({
   // --- Add-tag input ----------------------------------------------------
   const [addText, setAddText] = useState("");
 
+  // --- Chip filter (improvements #68 + #76) -----------------------------
+  // #76 unified #68's separate filter box into this input: while
+  // the user types, the chip list narrows display-only to chips
+  // containing the typed text (substring, case-insensitive, on
+  // the part after any source# prefix — the same part the
+  // suggestion search queries). Committing clears the input, so
+  // the filter never hides a just-added or just-activated chip.
+  const needle = splitPrefix(addText).rest.trim().toLowerCase();
+  const filtering = needle !== "";
+  const visibleChips = useMemo(
+    () =>
+      filtering
+        ? chips.filter((c) => c.text.toLowerCase().includes(needle))
+        : chips,
+    [chips, filtering, needle],
+  );
+
+  // If the chip whose editor is open falls out of the filtered
+  // view, close the editor — its anchor is no longer rendered.
+  useEffect(() => {
+    if (!openChip) return;
+    const visible = visibleChips.some(
+      (c) => c.seg === openChip.seg && c.tag === openChip.tag,
+    );
+    if (!visible) setOpenChip(null);
+  }, [visibleChips, openChip]);
+
   const scheduleAddSuggest = (text: string) => {
     if (!suggest) return;
     // A leading source#/target#/mutual# prefix is not part of the tag
@@ -401,22 +400,65 @@ export function TagField({
     onChange(next);
   };
 
-  const commitAdd = () => {
-    if (!addText.trim()) return;
-    appendTag(addText);
-    setAddText("");
-    setSuggestions([]);
-    queryRef.current = "";
+  // --- Unified commit (improvement #76) ---------------------------------
+  // One rule for Enter / comma / suggestion picks: if the field
+  // already holds a chip with this tag, ACTIVATE it (open its
+  // editor, scrolled into view) instead of adding a duplicate;
+  // otherwise append it as a new tag. The comparison is trimmed,
+  // case-insensitive, and treats underscores as spaces (the two
+  // spellings of the same tag), and a chip also matches on its
+  // text without the source#/target#/mutual# prefix — so typing
+  // "foo" finds an existing "source#foo" chip and vice versa.
+  const tagKey = (t: string) =>
+    t.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
+
+  const findChip = (text: string): Chip | undefined => {
+    const key = tagKey(text);
+    const restKey = tagKey(splitPrefix(text).rest);
+    return chips.find(
+      (c) =>
+        tagKey(c.text) === key ||
+        tagKey(splitPrefix(c.text).rest) === restKey,
+    );
   };
 
-  const applySuggestion = (s: TagSuggestion) => {
-    const { prefix } = splitPrefix(addText);
-    appendTag(prefix ? `${prefix}#${s.name}` : s.name);
+  // Returns true when an existing chip was activated (nothing
+  // was appended). Either way the input — and with it the
+  // filter — clears, so the activated / newly added chip is
+  // visible afterwards.
+  const commitTag = (rawText: string): boolean => {
+    const text = rawText.trim();
+    if (!text) return false;
+    const existing = findChip(text);
     setAddText("");
     setSuggestions([]);
     queryRef.current = "";
     highlightedRef.current = null;
-    // Keep focus in the add input for consecutive additions. The
+    if (existing) {
+      setOpenChip({ seg: existing.seg, tag: existing.tag });
+      const key = `${existing.seg}:${existing.tag}`;
+      // The chip re-renders unfiltered once the input clears;
+      // scroll it into view on the next frame.
+      requestAnimationFrame(() => {
+        rootRef.current
+          ?.querySelector(`[data-chip-key="${key}"]`)
+          ?.scrollIntoView({ block: "nearest" });
+      });
+      return true;
+    }
+    appendTag(text);
+    return false;
+  };
+
+  const commitAdd = () => {
+    commitTag(addText);
+  };
+
+  const applySuggestion = (s: TagSuggestion) => {
+    const { prefix } = splitPrefix(addText);
+    const activated = commitTag(prefix ? `${prefix}#${s.name}` : s.name);
+    // Keep focus in the add input for consecutive additions (an
+    // activation leaves focus to the chip editor instead). The
     // clear is repeated in the frame as a guard: if the Combobox
     // echoes the picked label back through onInputValueChange as
     // part of its selection handling, the input still ends empty
@@ -426,7 +468,7 @@ export function TagField({
       setAddText("");
       setSuggestions([]);
       queryRef.current = "";
-      addRef.current?.focus();
+      if (!activated) addRef.current?.focus();
     });
   };
 
@@ -526,45 +568,10 @@ export function TagField({
   );
 
   return (
-    <div data-tagfield={fieldId} className="flex flex-col gap-2">
-      {/* Chip filter (improvement #68): a quiet search box above
-          the chips, shown only for long fields (10+ chips). Same
-          InputGroup + inline clear pattern as the seed (#48) and
-          add-tag (#49) inputs; filtering is display-only. */}
-      {showFilter && (
-        <InputGroup className="h-11">
-          <InputGroupAddon align="inline-start">
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            ref={filterRef}
-            type="text"
-            aria-label="Filter tags"
-            placeholder="Filter tags"
-            value={filterText}
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            onChange={(e) => setFilterText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") clearFilter();
-            }}
-          />
-          {filterText !== "" && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-sm"
-                aria-label="Clear filter"
-                onClick={clearFilter}
-              >
-                <X className="size-4" />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-      )}
-      {/* Chips + add-tag input: the only editing UI. */}
+    <div ref={rootRef} data-tagfield={fieldId} className="flex flex-col gap-2">
+      {/* Chips + add-tag input: the only editing UI. The input
+          is also the chip filter (#76): typing narrows the chips
+          shown, committing activates a match or appends a tag. */}
       <div className="flex flex-wrap items-center gap-2">
         {visibleChips.map((c) => {
           const active =
@@ -582,6 +589,7 @@ export function TagField({
               >
                 <PopoverTrigger
                   data-chip
+                  data-chip-key={`${c.seg}:${c.tag}`}
                   className={cn(
                     "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-tag leading-snug",
                     "border-dashed text-muted-foreground",
@@ -616,6 +624,7 @@ export function TagField({
               <div
                 role="group"
                 data-chip
+                data-chip-key={`${c.seg}:${c.tag}`}
                 aria-label={c.text}
                 className={cn(
                   "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",
@@ -679,9 +688,10 @@ export function TagField({
             `suggestions` and the server's ordering is
             authoritative, so the Combobox's own filtering is
             disabled (filter={null}) and the list shows exactly
-            what the fetch returned. Selecting an item applies it
-            as a tag; Enter / comma with nothing highlighted
-            commits the typed text instead. The input itself is
+            what the fetch returned. Selecting an item commits
+            its name; Enter / comma with nothing highlighted
+            commits the typed text instead — both go through the
+            unified activate-or-append rule (#76). The input itself is
             the same InputGroup dashed pill as before, composed
             through the Combobox's Input part, so the #49 clear
             button keeps its place in the inline-end addon. */}
