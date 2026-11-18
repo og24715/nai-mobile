@@ -312,6 +312,10 @@ export function TagField({
   // The field's root element; chip activation (#76) scrolls the
   // matched chip into view through it.
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // This field's chip scroller (improvement #77's capped area);
+  // after an append it is scrolled to its end so the new chip —
+  // appended at the end of the list — is visible (#81).
+  const chipScrollerRef = useRef<HTMLDivElement | null>(null);
 
   // --- Suggestions (add-tag input only) --------------------------------
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -370,6 +374,78 @@ export function TagField({
         : chips,
     [chips, filtering, needle],
   );
+
+  // --- Scroll preservation across tag adds (improvement #81) ----
+  // Typing in the add input filters the chips (#76), which can
+  // collapse this field's chip area to nothing; the form content
+  // above the input shrinks with it, the browser clamps the form
+  // scroller's position, and when the commit restores the full
+  // chip list the browser's scroll anchoring rewrites the form
+  // scroll position again to keep the focused input pinned. Left
+  // to the browser, that cycle threw the view around on every
+  // add — on the phone, all the way to the top. So the app owns
+  // the position instead: while the input is NOT filtering, the
+  // form scroller's position is tracked as the settled position
+  // (this also captures the browser's own scroll-on-focus
+  // adjustment, which happens before the first keystroke); after
+  // an append, that position is restored verbatim and the chip
+  // scroller is scrolled to its end so the new chip shows.
+  // Activation (an exact match, #76) deliberately does NOT
+  // restore: its scrollIntoView is the point.
+  const formScrollerRef = useRef<HTMLElement | null>(null);
+  const savedFormScrollRef = useRef<number | null>(null);
+  const filteringRef = useRef(filtering);
+  useEffect(() => {
+    filteringRef.current = filtering;
+  }, [filtering]);
+
+  // The form's scroll container is the first scrollable ancestor
+  // above the field (the chip scroller is a descendant of the
+  // field root, so it is never matched here).
+  const findFormScroller = (): HTMLElement | null => {
+    let el = rootRef.current?.parentElement ?? null;
+    while (el) {
+      const oy = getComputedStyle(el).overflowY;
+      if (oy === "auto" || oy === "scroll") return el;
+      el = el.parentElement;
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const scroller = findFormScroller();
+    if (!scroller) return;
+    formScrollerRef.current = scroller;
+    if (!filteringRef.current) {
+      savedFormScrollRef.current = scroller.scrollTop;
+    }
+    const onScroll = () => {
+      if (!filteringRef.current) {
+        savedFormScrollRef.current = scroller.scrollTop;
+      }
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Set by the append path of commitTag; the effect below runs
+  // it once the appended value has rendered (the full chip list
+  // is back and the browser's anchoring adjustment for the
+  // regrowth has already been applied, so this write is the one
+  // that sticks — a bare requestAnimationFrame can fire before
+  // the re-render lands and be overwritten by the anchoring).
+  const pendingSettleRef = useRef(false);
+  useEffect(() => {
+    if (!pendingSettleRef.current) return;
+    pendingSettleRef.current = false;
+    const scroller = formScrollerRef.current ?? findFormScroller();
+    if (scroller && savedFormScrollRef.current !== null) {
+      scroller.scrollTop = savedFormScrollRef.current;
+    }
+    const cs = chipScrollerRef.current;
+    if (cs) cs.scrollTop = cs.scrollHeight;
+  }, [value]);
 
   // If the chip whose editor is open falls out of the filtered
   // view, close the editor — its anchor is no longer rendered.
@@ -448,6 +524,7 @@ export function TagField({
       return true;
     }
     appendTag(text);
+    pendingSettleRef.current = true;
     return false;
   };
 
@@ -469,7 +546,10 @@ export function TagField({
       setAddText("");
       setSuggestions([]);
       queryRef.current = "";
-      if (!activated) addRef.current?.focus();
+      // preventScroll (#81): the form's scroll position is owned
+      // by the settle logic above; a plain focus() would let the
+      // browser scroll the input into view on top of it.
+      if (!activated) addRef.current?.focus({ preventScroll: true });
     });
   };
 
@@ -599,7 +679,7 @@ export function TagField({
           instead of stretching the whole form — about four rows
           of chips stay visible. The add-tag input below stays
           outside the scroller. */}
-      <div className="max-h-44 overflow-y-auto p-0.5">
+      <div ref={chipScrollerRef} className="max-h-44 overflow-y-auto p-0.5">
         <div className="flex flex-wrap items-center gap-2">
         {visibleChips.map((c) => {
           const active =
@@ -848,7 +928,9 @@ export function TagField({
                     setSuggestions([]);
                     queryRef.current = "";
                     // Keep focus in the add input for the next tag.
-                    requestAnimationFrame(() => addRef.current?.focus());
+                    requestAnimationFrame(() =>
+                      addRef.current?.focus({ preventScroll: true }),
+                    );
                   }}
                 >
                   <X className="size-4" />
