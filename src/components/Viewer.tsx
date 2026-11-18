@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Heart } from "lucide-react";
 import type { RecentItem } from "@/lib/api";
 import {
@@ -72,16 +72,121 @@ interface Props {
 // button (bottom-right) toggling its favorite state, favorited
 // thumbnails get a heart badge, and the Recent header has a
 // "Delete Others" bulk-delete with a confirmation dialog
-// (improvement #61).
+// (improvement #61). A horizontal swipe on the hero navigates
+// through the loaded recent items — left to the next (older)
+// image, right to the previous (newer) one, no wrap-around
+// (improvement #71).
 export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // --- Swipe navigation on the hero (improvement #71) ---
+  // The image follows the finger horizontally; on release it
+  // switches once the drag passed SWIPE_THRESHOLD, otherwise it
+  // snaps back. Horizontal dominance is required so diagonal
+  // scrolls never engage it, and `touch-action: pan-y` (on the
+  // anchor below) keeps vertical page scrolling native while
+  // horizontal moves are delivered to these handlers.
+  const SWIPE_THRESHOLD = 48;
+  const SWIPE_SLOP = 8;
+  const heroIndex = items.findIndex((i) => i.url === heroUrl);
+  const newerItem = heroIndex > 0 ? items[heroIndex - 1] : undefined;
+  const olderItem =
+    heroIndex >= 0 && heroIndex < items.length - 1
+      ? items[heroIndex + 1]
+      : undefined;
+  const [dragX, setDragX] = useState(0);
+  const [dragAnimate, setDragAnimate] = useState(false);
+  const gestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dx: number;
+    decided: boolean;
+    horizontal: boolean;
+  } | null>(null);
+  // Set when a horizontal drag ends: the click the browser fires
+  // right after pointerup must not open the original.
+  const suppressClickRef = useRef(false);
+
+  function onHeroPointerDown(e: ReactPointerEvent<HTMLAnchorElement>) {
+    if (gestureRef.current) return;
+    gestureRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      dx: 0,
+      decided: false,
+      horizontal: false,
+    };
+    setDragAnimate(false);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Pointer already gone; the move/up handlers just never run.
+    }
+  }
+
+  function onHeroPointerMove(e: ReactPointerEvent<HTMLAnchorElement>) {
+    const g = gestureRef.current;
+    if (!g || e.pointerId !== g.pointerId) return;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+    if (!g.decided) {
+      if (Math.abs(dx) < SWIPE_SLOP && Math.abs(dy) < SWIPE_SLOP) return;
+      g.decided = true;
+      g.horizontal = Math.abs(dx) > Math.abs(dy);
+    }
+    if (!g.horizontal) return;
+    g.dx = dx;
+    // Resistance when there is no image in the drag direction.
+    const target = dx < 0 ? olderItem : newerItem;
+    setDragX(target ? dx : dx * 0.35);
+  }
+
+  function onHeroPointerEnd(e: ReactPointerEvent<HTMLAnchorElement>, cancelled: boolean) {
+    const g = gestureRef.current;
+    if (!g || e.pointerId !== g.pointerId) return;
+    gestureRef.current = null;
+    if (!g.horizontal) {
+      setDragX(0);
+      return;
+    }
+    suppressClickRef.current = true;
+    const target =
+      !cancelled && Math.abs(g.dx) >= SWIPE_THRESHOLD
+        ? g.dx < 0
+          ? olderItem
+          : newerItem
+        : undefined;
+    setDragAnimate(true);
+    if (target) onSelect(target.url);
+    setDragX(0);
+  }
+
+  function onHeroClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      e.preventDefault();
+    }
+  }
+
   return (
     <>
       {heroUrl && (
-        <div className="relative">
+        <div className="relative overflow-hidden">
           <ContextMenu>
             <ContextMenuTrigger className="block leading-none [-webkit-touch-callout:none]">
-              <a href={heroUrl} target="_blank" rel="noopener noreferrer">
+              <a
+                href={heroUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="[touch-action:pan-y]"
+                onClick={onHeroClick}
+                onPointerDown={onHeroPointerDown}
+                onPointerMove={onHeroPointerMove}
+                onPointerUp={(e) => onHeroPointerEnd(e, false)}
+                onPointerCancel={(e) => onHeroPointerEnd(e, true)}
+              >
                 <img
                   src={heroUrl}
                   alt=""
@@ -92,6 +197,12 @@ export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, 
                       e.currentTarget.naturalHeight,
                     )
                   }
+                  style={{
+                    transform: `translateX(${dragX}px)`,
+                    transition: dragAnimate
+                      ? "transform 200ms ease-out"
+                      : undefined,
+                  }}
                   className="block h-auto w-full [-webkit-touch-callout:none]"
                 />
               </a>
