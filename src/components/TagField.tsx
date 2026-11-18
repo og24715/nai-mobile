@@ -229,7 +229,11 @@ function ChipEditorContent({
         </Button>
       </div>
       {suggestEnabled && editSuggestions.length > 0 && (
-        <ul className="flex flex-col overflow-hidden rounded-md border border-border bg-background">
+        // Capped at three rows (improvement #85): each row is
+        // min-h-tap (36 px), so max-h-27 = 108 px shows three and
+        // the rest scroll inside the list, instead of the list
+        // pushing the whole Popover off the top of the screen.
+        <ul className="flex max-h-27 flex-col overflow-y-auto rounded-md border border-border bg-background">
           {editSuggestions.map((s) => (
             <li key={s.name}>
               <button
