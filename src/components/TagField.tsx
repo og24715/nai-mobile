@@ -791,7 +791,19 @@ export function TagField({
               </InputGroupAddon>
             )}
           </InputGroup>
-          <ComboboxContent>
+          {/* Suggestions always open BELOW the input
+              (improvement #78): with the default flip collision
+              handling, the on-screen keyboard eats the space
+              under the field and Base UI flips the popup up over
+              the chip area, hiding the very tags the typing is
+              filtering. collisionAvoidance side:none disables
+              the flip middleware entirely; the popup instead
+              shrinks to --available-height and the list scrolls
+              internally. */}
+          <ComboboxContent
+            side="bottom"
+            collisionAvoidance={{ side: "none" }}
+          >
             <ComboboxList>
               {suggestions.map((s) => (
                 <ComboboxItem
