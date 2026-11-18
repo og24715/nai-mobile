@@ -14,6 +14,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
 import {
   Combobox,
@@ -282,19 +286,19 @@ function ChipEditorContent({
       )}
       {!chip.raw && character && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <select
+          <NativeSelect
             aria-label="Prefix"
             value={prefix ?? ""}
             onChange={(e) =>
               onPrefix(e.target.value === "" ? null : e.target.value)
             }
-            className="h-tap rounded-md border border-input bg-background px-1.5 text-sm"
+            className="[&>select]:h-tap"
           >
-            <option value="">No prefix</option>
-            <option value="source">source#</option>
-            <option value="target">target#</option>
-            <option value="mutual">mutual#</option>
-          </select>
+            <NativeSelectOption value="">No prefix</NativeSelectOption>
+            <NativeSelectOption value="source">source#</NativeSelectOption>
+            <NativeSelectOption value="target">target#</NativeSelectOption>
+            <NativeSelectOption value="mutual">mutual#</NativeSelectOption>
+          </NativeSelect>
         </div>
       )}
     </div>

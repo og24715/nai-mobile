@@ -15,12 +15,9 @@ import {
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
 import {
   Attachment,
@@ -263,22 +260,20 @@ export function GenerateForm({ form }: { form: FormState }) {
                 every field stacked vertically, never side by side. */}
             <div>
               <Label className={labelCls}>Model</Label>
-              <Select
-                items={MODELS}
+              {/* Dropdowns are Native Select (improvement #88):
+                  the native OS picker, sized to the form's
+                  h-11 / text-base through the wrapper. */}
+              <NativeSelect
                 value={form.model}
-                onValueChange={(v) => v && form.setModel(v)}
+                onChange={(e) => form.setModel(e.target.value)}
+                className="w-full [&>select]:h-11 [&>select]:text-base"
               >
-                <SelectTrigger className="h-11 w-full text-base">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODELS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {MODELS.map((m) => (
+                  <NativeSelectOption key={m.value} value={m.value}>
+                    {m.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
             </div>
 
             <div>
@@ -329,22 +324,17 @@ export function GenerateForm({ form }: { form: FormState }) {
 
             <div>
               <Label className={labelCls}>Sampler</Label>
-              <Select
-                items={SAMPLERS}
+              <NativeSelect
                 value={form.sampler}
-                onValueChange={(v) => v && form.setSampler(v)}
+                onChange={(e) => form.setSampler(e.target.value)}
+                className="w-full [&>select]:h-11 [&>select]:text-base"
               >
-                <SelectTrigger className="h-11 w-full text-base">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SAMPLERS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {SAMPLERS.map((s) => (
+                  <NativeSelectOption key={s.value} value={s.value}>
+                    {s.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
             </div>
 
             {/* Sliders are always stacked vertically, one full-width row
@@ -752,22 +742,19 @@ export function GenerateForm({ form }: { form: FormState }) {
                     </Attachment>
                     <div>
                       <Label className={labelCls}>Type</Label>
-                      <Select
-                        items={REF_TYPES}
+                      <NativeSelect
                         value={r.type}
-                        onValueChange={(v) => v && form.onUpdateRef(r.id, { type: v })}
+                        onChange={(e) =>
+                          form.onUpdateRef(r.id, { type: e.target.value })
+                        }
+                        className="w-full [&>select]:h-11 [&>select]:text-base"
                       >
-                        <SelectTrigger className="h-11 w-full text-base">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {REF_TYPES.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        {REF_TYPES.map((t) => (
+                          <NativeSelectOption key={t.value} value={t.value}>
+                            {t.label}
+                          </NativeSelectOption>
+                        ))}
+                      </NativeSelect>
                     </div>
                     <div>
                       <Label className={labelCls}>

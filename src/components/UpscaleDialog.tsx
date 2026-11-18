@@ -10,12 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { MODELS } from "@/lib/options";
 
 interface Props {
@@ -80,41 +77,31 @@ export function UpscaleDialog({ open, defaultModel, onExecute, onCancel }: Props
         <div className="flex flex-col gap-[18px]">
           <div>
             <Label className={labelCls}>Model</Label>
-            <Select
-              items={V5_MODELS}
+            <NativeSelect
               value={model}
-              onValueChange={(v) => v && setModel(v)}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full [&>select]:h-11 [&>select]:text-base"
             >
-              <SelectTrigger className="h-11 w-full text-base">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {V5_MODELS.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {V5_MODELS.map((m) => (
+                <NativeSelectOption key={m.value} value={m.value}>
+                  {m.label}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
           </div>
           <div>
             <Label className={labelCls}>Blur Sigma</Label>
-            <Select
-              items={BLUR_SIGMAS}
+            <NativeSelect
               value={sigma}
-              onValueChange={(v) => v && setSigma(v)}
+              onChange={(e) => setSigma(e.target.value)}
+              className="w-full [&>select]:h-11 [&>select]:text-base"
             >
-              <SelectTrigger className="h-11 w-full text-base">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BLUR_SIGMAS.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {BLUR_SIGMAS.map((s) => (
+                <NativeSelectOption key={s.value} value={s.value}>
+                  {s.label}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
           </div>
         </div>
         <DialogFooter>
