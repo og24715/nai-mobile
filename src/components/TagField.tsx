@@ -569,10 +569,13 @@ export function TagField({
 
   return (
     <div ref={rootRef} data-tagfield={fieldId} className="flex flex-col gap-2">
-      {/* Chips + add-tag input: the only editing UI. The input
-          is also the chip filter (#76): typing narrows the chips
-          shown, committing activates a match or appends a tag. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Chips: capped in height with internal scrolling
+          (improvement #77) so a long field scrolls on its own
+          instead of stretching the whole form — about four rows
+          of chips stay visible. The add-tag input below stays
+          outside the scroller. */}
+      <div className="max-h-44 overflow-y-auto p-0.5">
+        <div className="flex flex-wrap items-center gap-2">
         {visibleChips.map((c) => {
           const active =
             !!openChip && openChip.seg === c.seg && openChip.tag === c.tag;
@@ -591,7 +594,7 @@ export function TagField({
                   data-chip
                   data-chip-key={`${c.seg}:${c.tag}`}
                   className={cn(
-                    "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-tag leading-snug",
+                    "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-tag leading-snug",
                     "border-dashed text-muted-foreground",
                     active && "border-primary ring-1 ring-primary",
                   )}
@@ -641,7 +644,7 @@ export function TagField({
                   }}
                   className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
                 >
-                  <Minus size={18} />
+                  <Minus size={16} />
                 </button>
                 <PopoverTrigger className="flex min-w-0 touch-manipulation items-center gap-1.5 px-1.5 text-tag leading-snug">
                   <span className="truncate">{c.text}</span>
@@ -665,7 +668,7 @@ export function TagField({
                   }}
                   className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
                 >
-                  <Plus size={18} />
+                  <Plus size={16} />
                 </button>
               </div>
               <PopoverContent
@@ -682,7 +685,9 @@ export function TagField({
             No tags match
           </p>
         )}
-        {/* Add-tag combobox (improvement #54): shadcn's Combobox
+        </div>
+      </div>
+      {/* Add-tag combobox (improvement #54): shadcn's Combobox
             (Base UI) renders the suggestions; the data layer is
             unchanged — the debounced /api/tags relay fills
             `suggestions` and the server's ordering is
@@ -809,7 +814,6 @@ export function TagField({
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
-      </div>
     </div>
   );
 }

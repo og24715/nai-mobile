@@ -69,16 +69,23 @@
     --text-2xl--line-height: 3rem;
     /* Tag-editor baseline sizes (improvement #26): the tag-editing
        area is the app's size reference. Chips, the add-tag input,
-       suggestion rows and the chip editor bar all scale from these
-       tokens — do not inline literal sizes for them in components. */
-    --text-tag: 1.125rem;
-    --text-tag-badge: 0.875rem;
+       suggestion rows and the chip editor all scale from these
+       tokens — do not inline literal sizes for them in components.
+       Improvement #77 shrank the chips back to a compact size (the
+       #26 scale-up made long tag fields unwieldy); --text-suggest
+       stays larger so suggestion rows remain readable. */
+    --text-tag: 0.875rem;
+    --text-tag-badge: 0.75rem;
     --text-suggest: 1.0625rem;
-    /* Minimum tap target (44px, the Apple HIG / Material guideline). */
-    --spacing-tap: 2.75rem;
+    /* Height of the tag-editor rows (chip height; also the
+       add-tag input and the chip editor's controls). Only the
+       tag editor uses this token — #77 took it down from the
+       44px tap-target guideline to a compact 36px together with
+       the chip size revert. */
+    --spacing-tap: 2.25rem;
     /* Width of a chip's on-chip −/+ step zone (improvement #34):
        the step zones share the tap height but can be narrower. */
-    --spacing-stepper: 2rem;
+    --spacing-stepper: 1.625rem;
 }
 
 :root {
