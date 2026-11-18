@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Heart, ImagePlus } from "lucide-react";
+import { Heart } from "lucide-react";
 import AutoHeight from "embla-carousel-auto-height";
 import type { RecentItem } from "@/lib/api";
 import {
@@ -25,14 +25,6 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "cn";
 
@@ -50,14 +42,6 @@ interface Props {
   // #55).
   busy: boolean;
   items: RecentItem[];
-  // True once the first /api/recent load has settled. The empty
-  // state (improvement #72) is only shown after that, so a user
-  // who does have images never sees a false "No images yet"
-  // flash while the list is still loading.
-  recentLoaded: boolean;
-  // Opens the generate form Drawer — the same action as the
-  // ✎ FAB; the empty state's button uses it.
-  onOpenForm: () => void;
   onSelect: (url: string) => void;
   onRestoreHero: () => void;
   onUpscale: () => void;
@@ -102,10 +86,8 @@ interface Props {
 // button (bottom-right) toggling its favorite state, favorited
 // thumbnails get a heart badge, and the Recent header has a
 // "Delete Others" bulk-delete with a confirmation dialog
-// (improvement #61). When there are no images at all (and no
-// operation is in flight), a shadcn Empty state stands where
-// the carousel would be (improvement #72).
-export function Viewer({ heroUrl, status, busy, items, recentLoaded, onOpenForm, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
+// (improvement #61).
+export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // --- Hero carousel selection sync (improvement #71) ---
@@ -160,7 +142,7 @@ export function Viewer({ heroUrl, status, busy, items, recentLoaded, onOpenForm,
 
   return (
     <>
-      {items.length > 0 ? (
+      {items.length > 0 && (
         <div className="relative">
           <ContextMenu>
             <ContextMenuTrigger className="block leading-none [-webkit-touch-callout:none]">
@@ -247,28 +229,6 @@ export function Viewer({ heroUrl, status, busy, items, recentLoaded, onOpenForm,
             />
           </button>
         </div>
-      ) : (
-        recentLoaded &&
-        !busy && (
-          <div className="mx-auto max-w-[640px] px-5 pt-10">
-            <Empty className="border">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <ImagePlus />
-                </EmptyMedia>
-                <EmptyTitle>No images yet</EmptyTitle>
-                <EmptyDescription>
-                  Images you generate will appear here.
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button type="button" onClick={onOpenForm}>
-                  Open the generation form
-                </Button>
-              </EmptyContent>
-            </Empty>
-          </div>
-        )
       )}
       <main className="mx-auto max-w-[640px] px-5 pt-8 pb-32">
         <div
