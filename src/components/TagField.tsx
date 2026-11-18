@@ -725,6 +725,18 @@ export function TagField({
             // Combobox writing the picked label into the input)
             // are handled by onValueChange, not as typing.
             if (details.reason === "item-press") return;
+            // Base UI also resets the input to the selected
+            // value's label when the popup finishes closing
+            // (reason "input-clear"): a selection-echo cleanup
+            // that assumes the text is a transient filter over
+            // a selection. Here value is pinned to null — picks
+            // are consumed as tag commits, never stored as a
+            // selection — so the label is always "" and any blur
+            // would wipe the typed text (and the #76 chip
+            // filter with it). This input's text is owned by
+            // the app; its only clears are the app's own paths:
+            // a commit, Escape, and the × button (#79).
+            if (details.reason === "input-clear") return;
             setAddText(v);
             scheduleAddSuggest(v);
           }}
