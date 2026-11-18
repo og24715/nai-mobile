@@ -445,6 +445,44 @@ function writeFavorites(favs: string[]): string[] {
   return clean;
 }
 
+// --- PNG dimensions (blank-hero fix) ------------------------------------
+// The hero carousel's AutoHeight plugin snapshots slide heights once at
+// Embla init — before the slide images have loaded — and never
+// re-measures (Embla's resize handling only watches the scroll-axis
+// size). Slide <img>s therefore need their intrinsic size up front, so
+// /api/recent carries each file's IHDR width/height and the client can
+// reserve the aspect ratio before any image bytes arrive. Reading the
+// dimensions costs 24 bytes per file; results are cached by
+// name+mtime+size so repeat calls stay cheap.
+const pngSizeCache = new Map<string, { width: number; height: number }>();
+function pngSize(
+  name: string,
+  mtimeMs: number,
+  size: number,
+): { width: number; height: number } | null {
+  const key = `${name}:${mtimeMs}:${size}`;
+  const hit = pngSizeCache.get(key);
+  if (hit) return hit;
+  try {
+    const fd = fs.openSync(path.join(OUTPUTS, name), "r");
+    try {
+      const buf = Buffer.alloc(24);
+      if (fs.readSync(fd, buf, 0, 24, 0) < 24) return null;
+      // 8-byte signature, 4-byte chunk length, "IHDR", then the
+      // width/height as big-endian uint32s at offsets 16/20.
+      if (buf.toString("latin1", 12, 16) !== "IHDR") return null;
+      const dims = { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+      if (dims.width <= 0 || dims.height <= 0) return null;
+      pngSizeCache.set(key, dims);
+      return dims;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", "http://localhost");
@@ -476,10 +514,16 @@ const server = http.createServer(async (req, res) => {
       // Delete-Others confirmation can state exact numbers.
       const favs = new Set(readFavorites());
       const all = fs.readdirSync(OUTPUTS).filter((f) => f.toLowerCase().endsWith(".png"))
-        .map((f) => ({ name: f, mtime: fs.statSync(path.join(OUTPUTS, f)).mtimeMs }))
+        .map((f) => { const st = fs.statSync(path.join(OUTPUTS, f)); return { name: f, mtime: st.mtimeMs, size: st.size }; })
         .sort((a, b) => b.mtime - a.mtime);
       const items = all.slice(0, 30)
-        .map((x) => ({ name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name) }));
+        .map((x) => {
+          // IHDR dimensions let the client reserve each image's
+          // aspect ratio before it loads; omitted when the header
+          // can't be parsed.
+          const dims = pngSize(x.name, x.mtime, x.size);
+          return { name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name), ...(dims ? { width: dims.width, height: dims.height } : {}) };
+        });
       sendJson(res, 200, { ok: true, items, total: all.length, favoriteCount: favs.size }); return;
     }
     if (req.method === "GET" && p === "api/subscription") {

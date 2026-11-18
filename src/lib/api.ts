@@ -5,6 +5,15 @@ export interface RecentItem {
   url: string;
   // Favorites-store state (improvement #61).
   favorite: boolean;
+  // Intrinsic PNG size from the file's IHDR. The
+  // hero carousel measures slide heights before images load, so the
+  // client renders these as width/height attributes + aspect-ratio
+  // to reserve the correct layout size up front. Absent when the
+  // server couldn't parse the header (or for items built from
+  // generate/upscale/enhance responses, which a /api/recent refresh
+  // immediately supersedes).
+  width?: number;
+  height?: number;
 }
 
 export interface GenerateRequest {

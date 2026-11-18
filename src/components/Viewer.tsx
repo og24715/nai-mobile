@@ -120,6 +120,13 @@ export function Viewer({ heroUrl, status, busy, items, recentLoaded, onOpenForm,
   // mixes portrait / landscape / square images).
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
   const autoHeight = useRef(AutoHeight());
+  // AutoHeight snapshots slide heights at Embla init and never
+  // re-measures on its own: the slide images now
+  // reserve their aspect ratio from the server-provided IHDR size
+  // so the init measurement is already correct, and the first real
+  // image load triggers one reInit as insurance so the plugin
+  // re-snapshots with everything laid out for real.
+  const reInitOnLoad = useRef(false);
   const heroIndex = items.findIndex((i) => i.url === heroUrl);
   // Latest values for the Embla callback, which is subscribed
   // once per api instance and must never go stale.
@@ -175,13 +182,25 @@ export function Viewer({ heroUrl, status, busy, items, recentLoaded, onOpenForm,
                           src={it.url}
                           alt=""
                           draggable={false}
-                          onLoad={(e) =>
+                          width={it.width}
+                          height={it.height}
+                          style={{
+                            aspectRatio:
+                              it.width && it.height
+                                ? `${it.width} / ${it.height}`
+                                : undefined,
+                          }}
+                          onLoad={(e) => {
                             onHeroLoad(
                               it.url,
                               e.currentTarget.naturalWidth,
                               e.currentTarget.naturalHeight,
-                            )
-                          }
+                            );
+                            if (!reInitOnLoad.current) {
+                              reInitOnLoad.current = true;
+                              carouselApi?.reInit();
+                            }
+                          }}
                           className="block h-auto w-full [-webkit-touch-callout:none]"
                         />
                       </a>
@@ -289,6 +308,14 @@ export function Viewer({ heroUrl, status, busy, items, recentLoaded, onOpenForm,
                   src={it.url}
                   loading="lazy"
                   alt=""
+                  width={it.width}
+                  height={it.height}
+                  style={{
+                    aspectRatio:
+                      it.width && it.height
+                        ? `${it.width} / ${it.height}`
+                        : undefined,
+                  }}
                   className="block h-auto w-full rounded-xl"
                 />
                 {it.favorite && (
