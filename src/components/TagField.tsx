@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Check, Ellipsis, X } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
@@ -25,6 +31,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Combobox,
   ComboboxContent,
@@ -93,15 +107,23 @@ function fmtCount(n: number): string {
 // are gone.
 // Non-raw chips also get tag suggestions while editing (#60): the
 // same data as the add-tag input (fetchTagSuggestions, 250 ms
-// debounce, 2-char minimum, query on the part after any prefix),
-// rendered as an inline list under the input — NOT the add input's
-// Combobox, whose popup is portaled outside this Popover and
-// would make every suggestion tap an outside press that dismisses
-// the editor (the #50 veto only exempts this field's chips). A
-// pick COMMITS immediately (#65): it runs the same setChipText
-// path as ✓ / Enter (prefix preserved, section split included)
-// and then closes the Popover. Typing only edits the draft; ✓ /
-// Enter commits the draft and closes the Popover too (#66).
+// debounce, 2-char minimum, query on the part after any prefix).
+// Since #90 the input + list form a shadcn Command kept INLINE
+// inside the Popover — Command renders plain DOM (no portal),
+// unlike the add input's Combobox, whose portaled popup would
+// make every suggestion tap an outside press that dismisses the
+// editor (the #50 veto only exempts this field's chips). cmdk's
+// own filtering is disabled (shouldFilter={false}): the items
+// arrive pre-filtered from the relay. A pick COMMITS immediately
+// (#65): it runs the same setChipText path as ✓ / Enter (prefix
+// preserved, section split included) and then closes the Popover.
+// Typing only edits the draft; ✓ / Enter commits the draft and
+// closes the Popover too (#66) — and Enter picks a suggestion
+// ONLY when the user deliberately highlighted one with the arrow
+// keys (mirroring the add-tag Combobox, #54): cmdk auto-highlights
+// the first item whenever the list changes, so highlight changes
+// are accepted into state only after an arrow key, and a plain
+// Enter applies the draft text, never the first suggestion.
 function ChipEditorContent({
   chip,
   suggest,
@@ -124,6 +146,16 @@ function ChipEditorContent({
   const [editSuggestions, setEditSuggestions] = useState<TagSuggestion[]>(
     [],
   );
+  // Whether the last completed query came back empty — drives
+  // the Command's no-results row (#90). Cleared whenever the
+  // draft changes, so it never shows for a query not yet run.
+  const [editNoResults, setEditNoResults] = useState(false);
+  // cmdk's highlighted item, controlled (#90): kept empty until
+  // the user navigates with the arrow keys — cmdk's own
+  // auto-highlight of the first item is not accepted into state
+  // (see the header note), so a plain Enter can never pick it.
+  const [highlight, setHighlight] = useState("");
+  const editNavRef = useRef(false);
   const editInputRef = useRef<HTMLInputElement | null>(null);
   const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -141,6 +173,7 @@ function ChipEditorContent({
     if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
     if (q.length < 2 || /[:{}[\]]/.test(q)) {
       setEditSuggestions([]);
+      setEditNoResults(false);
       return;
     }
     editDebounceRef.current = setTimeout(() => {
@@ -156,6 +189,7 @@ function ChipEditorContent({
         // Drop stale responses, mirroring the add input's guard.
         if (editQueryRef.current === q) {
           setEditSuggestions(list.slice(0, 8));
+          setEditNoResults(list.length === 0);
         }
       });
     }, 250);
@@ -177,14 +211,50 @@ function ChipEditorContent({
   const pickEditSuggestion = (s: TagSuggestion) => {
     const { prefix: p } = splitPrefix(draft);
     setEditSuggestions([]);
+    setEditNoResults(false);
     editQueryRef.current = "";
     onPickSuggestion(p ? `${p}#${s.name}` : s.name);
   };
 
   const apply = () => {
     setEditSuggestions([]);
+    setEditNoResults(false);
     editQueryRef.current = "";
     onApplyText(draft);
+  };
+
+  // One draft-change path for both editor inputs (the Command
+  // input and the plain one): typing invalidates any deliberate
+  // highlight and re-runs the suggestion query.
+  const onDraftChange = (v: string) => {
+    setDraft(v);
+    editNavRef.current = false;
+    setHighlight("");
+    runEditQuery(v);
+  };
+
+  // Enter handling for the Command input, in the capture phase
+  // so cmdk's own Enter-to-select never fires: arrow keys mark
+  // deliberate navigation (and pass through to cmdk untouched),
+  // Enter picks the highlighted suggestion when there is one
+  // and applies the typed draft otherwise (#90, mirroring #54).
+  const onEditKeyDownCapture = (e: ReactKeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      editNavRef.current = true;
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (editNavRef.current) {
+        const s = editSuggestions.find((x) => x.name === highlight);
+        if (s) {
+          pickEditSuggestion(s);
+          return;
+        }
+      }
+      apply();
+    }
   };
 
   // Re-seed the draft when the popover's chip changes text through
@@ -194,77 +264,112 @@ function ChipEditorContent({
   useEffect(() => {
     setDraft(chip.text);
     setEditSuggestions([]);
+    setEditNoResults(false);
+    editNavRef.current = false;
+    setHighlight("");
     editQueryRef.current = "";
   }, [chip.text]);
   // Plain tags carry no weight (null) and behave as 1.0.
   const weight = chip.weight ?? 1;
 
+  const applyButton = (
+    <Button
+      type="button"
+      variant="secondary"
+      aria-label="Apply text"
+      className="h-tap w-tap shrink-0 p-0"
+      onClick={apply}
+    >
+      <Check size={18} />
+    </Button>
+  );
+
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5">
-        <input
-          ref={editInputRef}
-          type="text"
-          value={draft}
-          aria-label="Tag text"
-          enterKeyHint="done"
-          autoComplete="off"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          autoFocus
-          onChange={(e) => {
-            setDraft(e.target.value);
-            runEditQuery(e.target.value);
+      {suggestEnabled ? (
+        <Command
+          shouldFilter={false}
+          value={highlight}
+          onValueChange={(v) => {
+            if (editNavRef.current) setHighlight(v);
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              apply();
-            }
-          }}
-          className="h-tap min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-tag outline-none focus:border-primary"
-        />
-        <Button
-          type="button"
-          variant="secondary"
-          aria-label="Apply text"
-          className="h-tap w-tap shrink-0 p-0"
-          onClick={apply}
+          className="h-auto gap-2 overflow-visible bg-transparent"
         >
-          <Check size={18} />
-        </Button>
-      </div>
-      {suggestEnabled && editSuggestions.length > 0 && (
-        // Capped at three rows (improvement #85): each row is
-        // min-h-tap (36 px), so max-h-27 = 108 px shows three and
-        // the rest scroll inside the list, instead of the list
-        // pushing the whole Popover off the top of the screen.
-        <ul className="flex max-h-27 flex-col overflow-y-auto rounded-md border border-border bg-background">
-          {editSuggestions.map((s) => (
-            <li key={s.name}>
-              <button
-                type="button"
-                // Don't let the tap move focus to the button
-                // before the click commits the pick.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pickEditSuggestion(s)}
-                className="flex min-h-tap w-full items-center px-3.5 text-left text-suggest active:bg-accent"
-              >
-                <span>{s.name}</span>
-                {s.mine > 0 ? (
-                  <span className="ml-auto text-xs font-medium text-primary">
-                    Frequently Used
-                  </span>
-                ) : s.count !== null ? (
-                  <span className="ml-auto text-tag-badge text-muted-foreground">
-                    {fmtCount(s.count)}
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          ))}
-        </ul>
+          <div className="flex items-center gap-1.5">
+            <CommandInput
+              ref={editInputRef}
+              value={draft}
+              aria-label="Tag text"
+              enterKeyHint="done"
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              autoFocus
+              onValueChange={onDraftChange}
+              onKeyDownCapture={onEditKeyDownCapture}
+              className="h-tap focus-within:border-primary"
+            />
+            {applyButton}
+          </div>
+          {(editSuggestions.length > 0 || editNoResults) && (
+            // Capped at three rows (improvement #85): each row is
+            // min-h-tap (36 px), so max-h-27 = 108 px shows three
+            // and the rest scroll inside the list, instead of the
+            // list pushing the whole Popover off the top of the
+            // screen.
+            <CommandList className="max-h-27 rounded-md border border-border bg-background">
+              <CommandEmpty className="py-3 text-muted-foreground">
+                No suggestions
+              </CommandEmpty>
+              <CommandGroup className="p-0">
+                {editSuggestions.map((s) => (
+                  <CommandItem
+                    key={s.name}
+                    value={s.name}
+                    onSelect={() => pickEditSuggestion(s)}
+                    className="min-h-tap px-3.5"
+                  >
+                    <span className="text-suggest">{s.name}</span>
+                    {s.mine > 0 ? (
+                      <span className="ml-auto text-xs font-medium text-primary">
+                        Frequently Used
+                      </span>
+                    ) : s.count !== null ? (
+                      <span className="ml-auto text-tag-badge text-muted-foreground">
+                        {fmtCount(s.count)}
+                      </span>
+                    ) : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          )}
+        </Command>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <input
+            ref={editInputRef}
+            type="text"
+            value={draft}
+            aria-label="Tag text"
+            enterKeyHint="done"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                apply();
+              }
+            }}
+            className="h-tap min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-tag outline-none focus:border-primary"
+          />
+          {applyButton}
+        </div>
       )}
       {!chip.raw && (
         <div>
