@@ -169,7 +169,16 @@ export function Viewer({ heroUrl, status, busy, items, formSize, onSelect, onRes
             <ContextMenuTrigger className="block leading-none [-webkit-touch-callout:none]">
               <Carousel
                 setApi={setCarouselApi}
-                opts={{ loop: false }}
+                // Snap tuning (improvement #75): Embla's default
+                // duration (25) settles with a long, floaty glide;
+                // 12 gives a crisp pager snap that lands and stops.
+                // dragFree stays off so a flick moves exactly one
+                // slide. (Public options only — no patching of
+                // Embla's physics.) The AutoHeight height switch
+                // needs no tuning: the plugin assigns style.height
+                // directly and no CSS transition animates it, so
+                // it already changes instantly on slide change.
+                opts={{ loop: false, duration: 12, dragFree: false }}
                 plugins={[autoHeight.current]}
               >
                 <CarouselContent className="ml-0">
@@ -185,6 +194,7 @@ export function Viewer({ heroUrl, status, busy, items, formSize, onSelect, onRes
                           src={it.url}
                           alt=""
                           draggable={false}
+                          decoding="async"
                           width={it.width}
                           height={it.height}
                           style={{
