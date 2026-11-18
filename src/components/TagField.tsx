@@ -13,6 +13,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import {
   Combobox,
   ComboboxContent,
@@ -65,8 +67,15 @@ function fmtCount(n: number): string {
 // raw chunks; empty text deletes the chip), a delete button, and —
 // for non-raw chips in character fields only — the
 // source#/target#/mutual# prefix selector. Raw chunks get only the
-// text row plus delete. Weight is NOT adjusted here (#34): each
-// chip carries its own [−][+] step zones.
+// text row plus delete. Non-raw chips also get a weight slider
+// (improvement #82): range −3..+3 in 0.05 steps, applied live
+// through the same setChipWeight path as the chips' own [−][+]
+// step zones (#34) — exactly 1.0 unwraps to a plain tag, and a
+// tag inside a multi-tag section splits out at the new weight,
+// with the Popover following it. A weight outside the slider's
+// range shows its true value in the readout with the thumb
+// pinned at the nearest end; opening the editor never changes
+// the weight on its own.
 // Non-raw chips also get tag suggestions while editing (#60): the
 // same data as the add-tag input (fetchTagSuggestions, 250 ms
 // debounce, 2-char minimum, query on the part after any prefix),
@@ -85,6 +94,7 @@ function ChipEditorContent({
   model,
   onApplyText,
   onPickSuggestion,
+  onSetWeight,
   onPrefix,
   onDelete,
 }: {
@@ -94,6 +104,7 @@ function ChipEditorContent({
   model?: string;
   onApplyText: (t: string) => void;
   onPickSuggestion: (t: string) => void;
+  onSetWeight: (w: number) => void;
   onPrefix: (p: string | null) => void;
   onDelete: () => void;
 }) {
@@ -177,6 +188,8 @@ function ChipEditorContent({
     editQueryRef.current = "";
   }, [chip.text]);
   const prefix = splitPrefix(chip.text).prefix;
+  // Plain tags carry no weight (null) and behave as 1.0.
+  const weight = chip.weight ?? 1;
 
   return (
     <div className="flex flex-col gap-2">
@@ -249,6 +262,27 @@ function ChipEditorContent({
             </li>
           ))}
         </ul>
+      )}
+      {!chip.raw && (
+        <div>
+          <Label className="mb-1.5 block text-sm font-medium text-muted-foreground">
+            Weight{" "}
+            <span className="text-lg font-semibold tabular-nums text-foreground">
+              ×{fmtWeight(weight)}
+            </span>
+          </Label>
+          <Slider
+            className="px-2"
+            aria-label="Tag weight"
+            value={[Math.min(3, Math.max(-3, weight))]}
+            min={-3}
+            max={3}
+            step={0.05}
+            onValueChange={(v) =>
+              onSetWeight(Array.isArray(v) ? v[0] : v)
+            }
+          />
+        </div>
       )}
       {!chip.raw && character && (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -553,15 +587,19 @@ export function TagField({
     });
   };
 
-  // --- On-chip weight stepping (improvement #34) -----------------------
-  // The −/+ zones of a chip step its weight directly through
-  // setChipWeight — the editor popover is not involved. The open
-  // popover is only adjusted when indices move: the stepped chip
-  // itself is followed to its (possibly split-out) position so its
-  // popover stays on it, and an open chip pointing into/after a
-  // section that split is shifted to keep pointing at the same tag.
-  const stepChip = (c: Chip, delta: number) => {
-    const r = setChipWeight(segs, c.seg, c.tag, (c.weight ?? 1) + delta);
+  // --- Chip weight edits (improvements #34 + #82) ---------------------
+  // Both weight controls go through setChipWeight and share this
+  // write + follow path: the −/+ zones on a chip step its weight
+  // (#34), and the editor Popover's slider sets it absolutely,
+  // live while dragging (#82). The open popover is only adjusted
+  // when indices move: the edited chip itself is followed to its
+  // (possibly split-out) position so its popover stays on it, and
+  // an open chip pointing into/after a section that split is
+  // shifted to keep pointing at the same tag.
+  const applyWeightResult = (
+    c: Chip,
+    r: ReturnType<typeof setChipWeight>,
+  ) => {
     if (r.segs === segs) return;
     onChange(serializePrompt(r.segs));
     if (!openChip) return;
@@ -576,6 +614,15 @@ export function TagField({
         setOpenChip({ seg: openChip.seg + 1, tag: openChip.tag });
       }
     }
+  };
+  const stepChip = (c: Chip, delta: number) => {
+    applyWeightResult(
+      c,
+      setChipWeight(segs, c.seg, c.tag, (c.weight ?? 1) + delta),
+    );
+  };
+  const applyWeight = (c: Chip, w: number) => {
+    applyWeightResult(c, setChipWeight(segs, c.seg, c.tag, w));
   };
   const applyText = (c: Chip, t: string) => {
     const r = setChipText(segs, c.seg, c.tag, t);
@@ -667,10 +714,32 @@ export function TagField({
       model={model}
       onApplyText={(t) => applyText(c, t)}
       onPickSuggestion={(t) => applySuggestionText(c, t)}
+      onSetWeight={(w) => applyWeight(c, w)}
       onPrefix={(p) => applyPrefix(c, p)}
       onDelete={() => applyDelete(c)}
     />
   );
+
+  // React keys for the chip Popovers (improvement #82): keyed by
+  // chip text + occurrence, NOT by segment/tag coordinates. A
+  // weight edit that splits a section renumbers the coordinates
+  // of the chips in it; with coordinate keys the open editor's
+  // Popover remounted on the split, killing the weight slider's
+  // drag after its first step. Text keys survive the renumbering
+  // (a split never changes the flattened chip order), so the
+  // editor instance — and an in-progress drag — stays alive and
+  // keeps adjusting the same tag. (The data-chip-key attribute
+  // keeps the coordinates: activation #76 and the outside-press
+  // veto address chips by position.)
+  const chipReactKeys = new Map<Chip, string>();
+  {
+    const seen = new Map<string, number>();
+    for (const c of visibleChips) {
+      const n = seen.get(c.text) ?? 0;
+      seen.set(c.text, n + 1);
+      chipReactKeys.set(c, `${c.text}#${n}`);
+    }
+  }
 
   return (
     <div ref={rootRef} data-tagfield={fieldId} className="flex flex-col gap-2">
@@ -693,7 +762,7 @@ export function TagField({
             // non-raw groups below.
             return (
               <Popover
-                key={`${c.seg}:${c.tag}`}
+                key={chipReactKeys.get(c)}
                 open={active}
                 onOpenChange={handleOpenChange(c)}
               >
@@ -742,7 +811,7 @@ export function TagField({
           // active/negative states, truncating label).
           return (
             <Popover
-              key={`${c.seg}:${c.tag}`}
+              key={chipReactKeys.get(c)}
               open={active}
               onOpenChange={handleOpenChange(c)}
             >
