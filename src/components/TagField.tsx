@@ -355,7 +355,22 @@ export function TagField({
   }, [visibleChips, weightChip, editChip]);
 
   // Focus the inline editor's input when a session starts, with
-  // the cursor at the end of the chip's text (#92).
+  // the cursor at the end of the chip's text (#92), and scroll
+  // the editing chip into the visible area above the keyboard
+  // (#93). The focus is preventScroll (the app owns scrolling
+  // here, as in #81), so without this the keyboard — which opens
+  // after the tap and covers the lower part of the screen —
+  // could hide a chip that sits low in the form. scrollIntoView
+  // puts the chip toward the top of every scroller it lives in
+  // (the chip scroller and the form scroller), leaving the room
+  // below for the in-flow suggestion list; the pill's
+  // scroll-margin (scroll-mt-16 while editing) keeps it clear of
+  // the form's sticky section header. The keyboard resizes the
+  // visual viewport asynchronously, so a single scroll races
+  // it: a viewport-shrink listener (the keyboard opening) and a
+  // delayed retry re-run the scroll until the layout settles.
+  // The listener only answers shrinkage, so closing the
+  // keyboard later does not yank the view back.
   useEffect(() => {
     if (!editChip) return;
     const el = editInputRef.current;
@@ -367,6 +382,23 @@ export function TagField({
     } catch {
       /* focus alone is enough if selection is rejected */
     }
+    const chipEl = el.closest("[data-chip]");
+    if (!chipEl) return;
+    const scroll = () => chipEl.scrollIntoView({ block: "start" });
+    scroll();
+    const vv = window.visualViewport;
+    let lastHeight = vv?.height ?? window.innerHeight;
+    const onResize = () => {
+      const h = vv?.height ?? window.innerHeight;
+      if (h < lastHeight) scroll();
+      lastHeight = h;
+    };
+    vv?.addEventListener("resize", onResize);
+    const retry = setTimeout(scroll, 350);
+    return () => {
+      vv?.removeEventListener("resize", onResize);
+      clearTimeout(retry);
+    };
   }, [editChip]);
 
   // Drop pending edit-suggestion work when the field unmounts.
@@ -978,7 +1010,7 @@ export function TagField({
                   aria-label={c.text}
                   className={cn(
                     "inline-flex max-w-full items-stretch divide-x divide-border overflow-hidden rounded-full border border-dashed text-muted-foreground select-none",
-                    editing && "w-full",
+                    editing && "w-full scroll-mt-16",
                     active && "border-primary ring-1 ring-primary",
                   )}
                 >
@@ -1014,7 +1046,7 @@ export function TagField({
                     neg
                       ? "divide-err/30 border-err/50 text-err"
                       : "divide-border border-border",
-                    editing && "w-full",
+                    editing && "w-full scroll-mt-16",
                     active && "border-primary ring-1 ring-primary",
                   )}
                 >
