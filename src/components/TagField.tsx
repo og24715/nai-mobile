@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Minus, Plus, Trash2, X } from "lucide-react";
+import { Check, Minus, Plus, Search, Trash2, X } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import {
@@ -281,6 +281,11 @@ function ChipEditorContent({
 // remains the single source of truth: chips are derived from it on
 // every render, and every edit rewrites it through the same setter,
 // so persistence and generation payloads are untouched.
+// Fields with many chips also get a filter box (improvement #68):
+// typing there only narrows which chips are RENDERED (substring,
+// case-insensitive); the value and the chips' original indices are
+// untouched, so editing through a filtered view behaves exactly as
+// unfiltered.
 export function TagField({
   fieldId,
   value,
@@ -299,6 +304,41 @@ export function TagField({
   const [openChip, setOpenChip] = useState<{ seg: number; tag: number } | null>(
     null,
   );
+
+  // --- Chip filter (improvement #68) ------------------------------------
+  // Display-only narrowing for long fields: the box appears once a
+  // field holds 10+ chips. The text is per-field component state,
+  // never persisted, and deliberately NOT reset when the value
+  // changes (stepper edits rewrite the value too and must keep the
+  // filter) — it simply filters whatever list is current.
+  const [filterText, setFilterText] = useState("");
+  const filterRef = useRef<HTMLInputElement | null>(null);
+  const showFilter = chips.length >= 10;
+  const needle = filterText.trim().toLowerCase();
+  const filtering = showFilter && needle !== "";
+  const visibleChips = useMemo(
+    () =>
+      filtering
+        ? chips.filter((c) => c.text.toLowerCase().includes(needle))
+        : chips,
+    [chips, filtering, needle],
+  );
+
+  // If the chip whose editor is open falls out of the filtered
+  // view, close the editor — its anchor is no longer rendered.
+  useEffect(() => {
+    if (!openChip) return;
+    const visible = visibleChips.some(
+      (c) => c.seg === openChip.seg && c.tag === openChip.tag,
+    );
+    if (!visible) setOpenChip(null);
+  }, [visibleChips, openChip]);
+
+  const clearFilter = () => {
+    setFilterText("");
+    // Keep focus in the filter box, mirroring the add input (#49).
+    requestAnimationFrame(() => filterRef.current?.focus());
+  };
 
   // --- Suggestions (add-tag input only) --------------------------------
   const [suggestions, setSuggestions] = useState<TagSuggestion[]>([]);
@@ -486,10 +526,47 @@ export function TagField({
   );
 
   return (
-    <div data-tagfield={fieldId}>
+    <div data-tagfield={fieldId} className="flex flex-col gap-2">
+      {/* Chip filter (improvement #68): a quiet search box above
+          the chips, shown only for long fields (10+ chips). Same
+          InputGroup + inline clear pattern as the seed (#48) and
+          add-tag (#49) inputs; filtering is display-only. */}
+      {showFilter && (
+        <InputGroup className="h-11">
+          <InputGroupAddon align="inline-start">
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            ref={filterRef}
+            type="text"
+            aria-label="Filter tags"
+            placeholder="Filter tags"
+            value={filterText}
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => setFilterText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") clearFilter();
+            }}
+          />
+          {filterText !== "" && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-sm"
+                aria-label="Clear filter"
+                onClick={clearFilter}
+              >
+                <X className="size-4" />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+      )}
       {/* Chips + add-tag input: the only editing UI. */}
       <div className="flex flex-wrap items-center gap-2">
-        {chips.map((c) => {
+        {visibleChips.map((c) => {
           const active =
             !!openChip && openChip.seg === c.seg && openChip.tag === c.tag;
           const neg = (c.weight ?? 1) < 0;
@@ -591,6 +668,11 @@ export function TagField({
             </Popover>
           );
         })}
+        {filtering && visibleChips.length === 0 && (
+          <p className="w-full text-sm text-muted-foreground">
+            No tags match
+          </p>
+        )}
         {/* Add-tag combobox (improvement #54): shadcn's Combobox
             (Base UI) renders the suggestions; the data layer is
             unchanged — the debounced /api/tags relay fills
