@@ -13,6 +13,7 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -282,22 +283,39 @@ export function GenerateForm({ form }: { form: FormState }) {
 
             <div>
               <Label className={labelCls}>Size</Label>
-              <Select
-                items={SIZES}
+              {/* Size is a radio group of choice cards (improvement
+                  #86, the shadcn radio-group choice-card pattern):
+                  the dimensions are the card title, the orientation
+                  the description, and the selected card takes the
+                  primary border via has-data-checked on the label
+                  wrapping the item. The stored value is the same
+                  "832x1216" string the Select used to write. */}
+              <RadioGroup
                 value={form.size}
-                onValueChange={(v) => v && form.setSize(v)}
+                onValueChange={(v) => {
+                  if (typeof v === "string" && v) form.setSize(v);
+                }}
+                className="gap-3"
               >
-                <SelectTrigger className="h-11 w-full text-base">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SIZES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {SIZES.map((s) => {
+                  const [title, rest] = s.label.split(" (");
+                  const desc = rest?.replace(/\)$/, "") ?? "";
+                  return (
+                    <label
+                      key={s.value}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3.5 transition-colors has-data-checked:border-primary has-data-checked:bg-primary/5"
+                    >
+                      <span className="flex flex-1 flex-col">
+                        <span className="text-base font-medium">{title}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {desc}
+                        </span>
+                      </span>
+                      <RadioGroupItem value={s.value} />
+                    </label>
+                  );
+                })}
+              </RadioGroup>
             </div>
 
             <div>
