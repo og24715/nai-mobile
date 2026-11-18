@@ -1,13 +1,6 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Ellipsis, X } from "lucide-react";
 import { cn } from "cn";
-import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
@@ -31,14 +24,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
 import {
   Combobox,
   ComboboxContent,
@@ -80,333 +65,64 @@ function fmtCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-// The per-chip editor (improvement #50): rendered inside the Popover
-// anchored to the chip itself, replacing the shared sticky editor
-// bar (#26) and its hand-rolled outside-tap dismissal (#36) — the
-// Popover's own outside-press / Escape handling does that now. The
-// contents mirror what the bar offered for a chip: a text field
-// holding the chip's own text (Enter or ✓ applies it through
-// setChipText — in place for plain/single-tag chips, split-out for
-// a tag inside a multi-tag section, verbatim body replacement for
-// raw chunks; empty text deletes the chip). Raw chunks get
-// only the text row. The editor carried its own delete button
-// until #84 removed it and a prefix selector until #89: both
-// now live in the menu on the chip's trailing segment (#89,
-// formerly the one-tap × from #80) — Delete for every chip,
-// plus the source#/target#/mutual# prefix radio group for
-// non-raw chips in character fields. Non-raw chips also get a
-// weight slider
-// (improvement #82): range −3..+3 in 0.05 steps, applied live
-// through setChipWeight — exactly 1.0 unwraps to a plain tag,
-// and a tag inside a multi-tag section splits out at the new
-// weight, with the Popover following it. A weight outside the
-// slider's range shows its true value in the readout with the
-// thumb pinned at the nearest end; opening the editor never
-// changes the weight on its own. Since #83 the slider is the
-// only weight control: the chips' own [−][+] step zones (#34)
-// are gone.
-// Non-raw chips also get tag suggestions while editing (#60): the
-// same data as the add-tag input (fetchTagSuggestions, 250 ms
-// debounce, 2-char minimum, query on the part after any prefix).
-// Since #90 the input + list form a shadcn Command kept INLINE
-// inside the Popover — Command renders plain DOM (no portal),
-// unlike the add input's Combobox, whose portaled popup would
-// make every suggestion tap an outside press that dismisses the
-// editor (the #50 veto only exempts this field's chips). cmdk's
-// own filtering is disabled (shouldFilter={false}): the items
-// arrive pre-filtered from the relay. A pick COMMITS immediately
-// (#65): it runs the same setChipText path as ✓ / Enter (prefix
-// preserved, section split included) and then closes the Popover.
-// Typing only edits the draft; ✓ / Enter commits the draft and
-// closes the Popover too (#66) — and Enter picks a suggestion
-// ONLY when the user deliberately highlighted one with the arrow
-// keys (mirroring the add-tag Combobox, #54): cmdk auto-highlights
-// the first item whenever the list changes, so highlight changes
-// are accepted into state only after an arrow key, and a plain
-// Enter applies the draft text, never the first suggestion.
-function ChipEditorContent({
+// The weight editor (improvement #82, rehoused in #92): a
+// Popover holding ONLY the weight slider — range −3..+3 in 0.05
+// steps, applied live through setChipWeight; exactly 1.0 unwraps
+// to a plain tag, and a tag inside a multi-tag section splits
+// out at the new weight, with the Popover following it. A weight
+// outside the slider's range shows its true value in the readout
+// with the thumb pinned at the nearest end; opening the Popover
+// never changes the weight on its own. The Popover's trigger is
+// the chip's weight badge, which every non-raw chip renders
+// since #92 (1 shown muted; the number carries no × prefix).
+// Text editing left the Popover in #92:
+// it is inline in the chip now (see the edit session in TagField
+// below), and the suggestions that #60/#90 rendered inside the
+// Popover render in flow under the editing chip instead.
+function ChipWeightContent({
   chip,
-  suggest,
-  model,
-  onApplyText,
-  onPickSuggestion,
   onSetWeight,
 }: {
   chip: Chip;
-  suggest?: boolean;
-  model?: string;
-  onApplyText: (t: string) => void;
-  onPickSuggestion: (t: string) => void;
   onSetWeight: (w: number) => void;
 }) {
-  const [draft, setDraft] = useState(chip.text);
-
-  // --- Suggestions (improvement #60) -----------------------------------
-  const suggestEnabled = !!suggest && !chip.raw;
-  const [editSuggestions, setEditSuggestions] = useState<TagSuggestion[]>(
-    [],
-  );
-  // Whether the last completed query came back empty — drives
-  // the Command's no-results row (#90). Cleared whenever the
-  // draft changes, so it never shows for a query not yet run.
-  const [editNoResults, setEditNoResults] = useState(false);
-  // cmdk's highlighted item, controlled (#90): kept empty until
-  // the user navigates with the arrow keys — cmdk's own
-  // auto-highlight of the first item is not accepted into state
-  // (see the header note), so a plain Enter can never pick it.
-  const [highlight, setHighlight] = useState("");
-  const editNavRef = useRef(false);
-  const editInputRef = useRef<HTMLInputElement | null>(null);
-  const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const editAbortRef = useRef<AbortController | null>(null);
-  const editQueryRef = useRef("");
-
-  const runEditQuery = (text: string) => {
-    if (!suggestEnabled) return;
-    // A leading source#/target#/mutual# prefix is not part of the
-    // tag being searched; it is re-attached when a suggestion is
-    // picked — same handling as the add-tag input (#22).
-    const q = splitPrefix(text).rest;
-    editQueryRef.current = q;
-    if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
-    if (q.length < 2 || /[:{}[\]]/.test(q)) {
-      setEditSuggestions([]);
-      setEditNoResults(false);
-      return;
-    }
-    editDebounceRef.current = setTimeout(() => {
-      editAbortRef.current?.abort();
-      const ctrl = new AbortController();
-      editAbortRef.current = ctrl;
-      void fetchTagSuggestions(
-        readStored(TOKEN_KEY) ?? "",
-        q,
-        model ?? "",
-        ctrl.signal,
-      ).then((list) => {
-        // Drop stale responses, mirroring the add input's guard.
-        if (editQueryRef.current === q) {
-          setEditSuggestions(list.slice(0, 8));
-          setEditNoResults(list.length === 0);
-        }
-      });
-    }, 250);
-  };
-
-  // Drop pending suggestion work when the editor unmounts.
-  useEffect(
-    () => () => {
-      if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
-      editAbortRef.current?.abort();
-    },
-    [],
-  );
-
-  // A picked suggestion commits immediately (#65): the picked
-  // name (with the draft's prefix re-attached) goes through the
-  // same setChipText commit path as ✓ / Enter, and the Popover
-  // closes — no separate apply step.
-  const pickEditSuggestion = (s: TagSuggestion) => {
-    const { prefix: p } = splitPrefix(draft);
-    setEditSuggestions([]);
-    setEditNoResults(false);
-    editQueryRef.current = "";
-    onPickSuggestion(p ? `${p}#${s.name}` : s.name);
-  };
-
-  const apply = () => {
-    setEditSuggestions([]);
-    setEditNoResults(false);
-    editQueryRef.current = "";
-    onApplyText(draft);
-  };
-
-  // One draft-change path for both editor inputs (the Command
-  // input and the plain one): typing invalidates any deliberate
-  // highlight and re-runs the suggestion query.
-  const onDraftChange = (v: string) => {
-    setDraft(v);
-    editNavRef.current = false;
-    setHighlight("");
-    runEditQuery(v);
-  };
-
-  // Enter handling for the Command input, in the capture phase
-  // so cmdk's own Enter-to-select never fires: arrow keys mark
-  // deliberate navigation (and pass through to cmdk untouched),
-  // Enter picks the highlighted suggestion when there is one
-  // and applies the typed draft otherwise (#90, mirroring #54).
-  const onEditKeyDownCapture = (e: ReactKeyboardEvent) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      editNavRef.current = true;
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      e.stopPropagation();
-      if (editNavRef.current) {
-        const s = editSuggestions.find((x) => x.name === highlight);
-        if (s) {
-          pickEditSuggestion(s);
-          return;
-        }
-      }
-      apply();
-    }
-  };
-
-  // Re-seed the draft when the popover's chip changes text through
-  // another action (e.g. a prefix change rewrites the chip text).
-  // Typing never touches chip.text, so this does not fight input.
-  // A reseed also makes any showing suggestions stale.
-  useEffect(() => {
-    setDraft(chip.text);
-    setEditSuggestions([]);
-    setEditNoResults(false);
-    editNavRef.current = false;
-    setHighlight("");
-    editQueryRef.current = "";
-  }, [chip.text]);
   // Plain tags carry no weight (null) and behave as 1.0.
   const weight = chip.weight ?? 1;
-
-  const applyButton = (
-    <Button
-      type="button"
-      variant="secondary"
-      aria-label="Apply text"
-      className="h-tap w-tap shrink-0 p-0"
-      onClick={apply}
-    >
-      <Check size={18} />
-    </Button>
-  );
-
   return (
-    <div className="flex flex-col gap-2">
-      {suggestEnabled ? (
-        <Command
-          shouldFilter={false}
-          value={highlight}
-          onValueChange={(v) => {
-            if (editNavRef.current) setHighlight(v);
-          }}
-          className="h-auto gap-2 overflow-visible bg-transparent"
-        >
-          <div className="flex items-center gap-1.5">
-            <CommandInput
-              ref={editInputRef}
-              value={draft}
-              aria-label="Tag text"
-              enterKeyHint="done"
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              autoFocus
-              onValueChange={onDraftChange}
-              onKeyDownCapture={onEditKeyDownCapture}
-              className="h-tap focus-within:border-primary"
-            />
-            {applyButton}
-          </div>
-          {(editSuggestions.length > 0 || editNoResults) && (
-            // Capped at three rows (improvement #85): each row is
-            // min-h-tap (36 px), so max-h-27 = 108 px shows three
-            // and the rest scroll inside the list, instead of the
-            // list pushing the whole Popover off the top of the
-            // screen.
-            <CommandList className="max-h-27 rounded-md border border-border bg-background">
-              <CommandEmpty className="py-3 text-muted-foreground">
-                No suggestions
-              </CommandEmpty>
-              <CommandGroup className="p-0">
-                {editSuggestions.map((s) => (
-                  <CommandItem
-                    key={s.name}
-                    value={s.name}
-                    onSelect={() => pickEditSuggestion(s)}
-                    className="min-h-tap px-3.5"
-                  >
-                    <span className="text-suggest">{s.name}</span>
-                    {s.mine > 0 ? (
-                      <span className="ml-auto text-xs font-medium text-primary">
-                        Frequently Used
-                      </span>
-                    ) : s.count !== null ? (
-                      <span className="ml-auto text-tag-badge text-muted-foreground">
-                        {fmtCount(s.count)}
-                      </span>
-                    ) : null}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          )}
-        </Command>
-      ) : (
-        <div className="flex items-center gap-1.5">
-          <input
-            ref={editInputRef}
-            type="text"
-            value={draft}
-            aria-label="Tag text"
-            enterKeyHint="done"
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                apply();
-              }
-            }}
-            className="h-tap min-w-0 flex-1 rounded-md border border-input bg-background px-2.5 text-tag outline-none focus:border-primary"
-          />
-          {applyButton}
-        </div>
-      )}
-      {!chip.raw && (
-        <div>
-          <Label className="mb-1.5 block text-sm font-medium text-muted-foreground">
-            Weight{" "}
-            <span className="text-lg font-semibold tabular-nums text-foreground">
-              ×{fmtWeight(weight)}
-            </span>
-          </Label>
-          <Slider
-            className="px-2"
-            aria-label="Tag weight"
-            value={[Math.min(3, Math.max(-3, weight))]}
-            min={-3}
-            max={3}
-            step={0.05}
-            onValueChange={(v) =>
-              onSetWeight(Array.isArray(v) ? v[0] : v)
-            }
-          />
-        </div>
-      )}
+    <div>
+      <Label className="mb-1.5 block text-sm font-medium text-muted-foreground">
+        Weight{" "}
+        <span className="text-lg font-semibold tabular-nums text-foreground">
+          {fmtWeight(weight)}
+        </span>
+      </Label>
+      <Slider
+        className="px-2"
+        aria-label="Tag weight"
+        value={[Math.min(3, Math.max(-3, weight))]}
+        min={-3}
+        max={3}
+        step={0.05}
+        onValueChange={(v) => onSetWeight(Array.isArray(v) ? v[0] : v)}
+      />
     </div>
   );
 }
 
+
 // A prompt field edited ONLY through its tag chips (improvements #21,
 // #28): the chips plus an inline "add tag" input with the
 // suggestion combobox (#22, #54) are the whole editing UI — there is no
-// free-text textarea anymore. Each non-raw chip is a
-// [label][menu] pill — the trailing segment opens the chip menu
-// (#89: Delete and, in character fields, Prefix). Tapping a
-// chip's label opens its editor Popover (#50) with the text
-// controls and the weight slider (#82); the [−][+] step zones
-// the chips carried in #34
-// were removed in #83, leaving the slider as the only weight
-// control. The field's string value
+// free-text textarea anymore. Each chip is a joined pill —
+// [badge][label][menu] for non-raw chips, [label][menu] for
+// raw chunks. The trailing segment opens the chip menu (#89:
+// Delete and, in character fields, Prefix). Tapping the label
+// edits the text inline in the chip (#92; until then it opened
+// an editor Popover, #50), and the weight badge — shown on every
+// non-raw chip since #92 — opens the weight Popover holding
+// the #82 slider, still the only weight control (the [−][+]
+// step zones from #34 were removed in #83). The field's
+// string value
 // remains the single source of truth: chips are derived from it on
 // every render, and every edit rewrites it through the same setter,
 // so persistence and generation payloads are untouched.
@@ -430,13 +146,54 @@ export function TagField({
   const segs = useMemo(() => parsePrompt(value), [value]);
   const chips = useMemo(() => listChips(segs), [segs]);
 
-  // Which chip's editor Popover is open, if any (improvement #50).
-  // Local to the field; the weight / text-edit follow logic below
-  // keeps it bound to the same tag when an edit splits a section
-  // and indices shift.
-  const [openChip, setOpenChip] = useState<{ seg: number; tag: number } | null>(
+  // Which chip's weight Popover is open, if any. Until #92 the
+  // Popover held the whole chip editor; now it holds only the
+  // weight slider, and text editing is inline in the chip (the
+  // edit session below). Local to the field; the follow logic
+  // below keeps it bound to the same tag when an edit splits a
+  // section and indices shift.
+  const [weightChip, setWeightChip] = useState<{
+    seg: number;
+    tag: number;
+  } | null>(null);
+
+  // --- Inline chip text editing (improvement #92) -------------------
+  // Tapping a chip's label edits its text IN the chip: the label
+  // segment is replaced by an input holding the draft below, and
+  // the tag suggestions render in flow directly under the chip
+  // (no floating overlay). Enter / ✓ / focus leaving commits
+  // through applyText (the same setChipText path the old Popover
+  // editor used, split-out included); Escape cancels; committing
+  // empty text deletes the chip. The draft lives here, not in
+  // the input, so a tap on another chip can commit this session
+  // before starting that chip's.
+  const [editChip, setEditChip] = useState<{
+    seg: number;
+    tag: number;
+  } | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const editInputRef = useRef<HTMLInputElement | null>(null);
+  // Suggestions for the inline editor: the same relay data as
+  // the add-tag input and the old Popover editor (#60) —
+  // fetchTagSuggestions, 250 ms debounce, 2-char minimum, query
+  // on the part after any prefix, stale responses dropped.
+  const [editSuggestions, setEditSuggestions] = useState<TagSuggestion[]>(
+    [],
+  );
+  // Whether the last completed edit query came back empty —
+  // drives the list's no-results row. Cleared on any draft
+  // change, so it never shows for a query not yet run.
+  const [editNoResults, setEditNoResults] = useState(false);
+  // Arrow-key highlight within the edit suggestions: Enter picks
+  // the highlighted item ONLY after deliberate arrow navigation
+  // (mirroring #54 / #90); a plain Enter commits the draft.
+  const [editHighlight, setEditHighlight] = useState(-1);
+  const editNavRef = useRef(false);
+  const editDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const editAbortRef = useRef<AbortController | null>(null);
+  const editQueryRef = useRef("");
   // The field's root element; chip activation (#76) scrolls the
   // matched chip into view through it.
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -575,15 +332,51 @@ export function TagField({
     if (cs) cs.scrollTop = cs.scrollHeight;
   }, [value]);
 
-  // If the chip whose editor is open falls out of the filtered
-  // view, close the editor — its anchor is no longer rendered.
+  // If the chip whose weight Popover is open — or the chip
+  // being edited inline — falls out of the filtered view, close
+  // it: its anchor is no longer rendered.
   useEffect(() => {
-    if (!openChip) return;
-    const visible = visibleChips.some(
-      (c) => c.seg === openChip.seg && c.tag === openChip.tag,
-    );
-    if (!visible) setOpenChip(null);
-  }, [visibleChips, openChip]);
+    if (
+      weightChip &&
+      !visibleChips.some(
+        (c) => c.seg === weightChip.seg && c.tag === weightChip.tag,
+      )
+    ) {
+      setWeightChip(null);
+    }
+    if (
+      editChip &&
+      !visibleChips.some(
+        (c) => c.seg === editChip.seg && c.tag === editChip.tag,
+      )
+    ) {
+      setEditChip(null);
+    }
+  }, [visibleChips, weightChip, editChip]);
+
+  // Focus the inline editor's input when a session starts, with
+  // the cursor at the end of the chip's text (#92).
+  useEffect(() => {
+    if (!editChip) return;
+    const el = editInputRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    const n = el.value.length;
+    try {
+      el.setSelectionRange(n, n);
+    } catch {
+      /* focus alone is enough if selection is rejected */
+    }
+  }, [editChip]);
+
+  // Drop pending edit-suggestion work when the field unmounts.
+  useEffect(
+    () => () => {
+      if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
+      editAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const scheduleAddSuggest = (text: string) => {
     if (!suggest) return;
@@ -607,8 +400,8 @@ export function TagField({
 
   // --- Unified commit (improvement #76) ---------------------------------
   // One rule for Enter / comma / suggestion picks: if the field
-  // already holds a chip with this tag, ACTIVATE it (open its
-  // editor, scrolled into view) instead of adding a duplicate;
+  // already holds a chip with this tag, ACTIVATE it (start
+  // editing it inline, scrolled into view) instead of adding a duplicate;
   // otherwise append it as a new tag. The comparison is trimmed,
   // case-insensitive, and treats underscores as spaces (the two
   // spellings of the same tag), and a chip also matches on its
@@ -640,7 +433,7 @@ export function TagField({
     queryRef.current = "";
     highlightedRef.current = null;
     if (existing) {
-      setOpenChip({ seg: existing.seg, tag: existing.tag });
+      startEdit(existing);
       const key = `${existing.seg}:${existing.tag}`;
       // The chip re-renders unfiltered once the input clears;
       // scroll it into view on the next frame.
@@ -664,7 +457,7 @@ export function TagField({
     const { prefix } = splitPrefix(addText);
     const activated = commitTag(prefix ? `${prefix}#${s.name}` : s.name);
     // Keep focus in the add input for consecutive additions (an
-    // activation leaves focus to the chip editor instead). The
+    // activation leaves focus to the chip's inline editor instead). The
     // clear is repeated in the frame as a guard: if the Combobox
     // echoes the picked label back through onInputValueChange as
     // part of its selection handling, the input still ends empty
@@ -682,32 +475,44 @@ export function TagField({
   };
 
   // --- Chip weight edits (improvement #82) ---------------------------
-  // The editor Popover's slider is the only weight control (the
+  // The weight Popover's slider is the only weight control (the
   // chips' −/+ step zones from #34 were removed in #83). It sets
   // the weight absolutely through setChipWeight, live while
-  // dragging, via this write + follow path. The open popover is only adjusted
-  // when indices move: the edited chip itself is followed to its
-  // (possibly split-out) position so its popover stays on it, and
-  // an open chip pointing into/after a section that split is
-  // shifted to keep pointing at the same tag.
+  // dragging, via this write + follow path. A tracked chip (the
+  // weight Popover's anchor, or the inline edit session) is only
+  // adjusted when indices move: the edited chip itself is
+  // followed to its (possibly split-out) position so it stays
+  // bound to the same tag, and a chip pointing into/after a
+  // section that split is shifted to keep pointing at its tag.
+  const followWeightEdit = (
+    st: { seg: number; tag: number } | null,
+    c: Chip,
+    r: ReturnType<typeof setChipWeight>,
+  ): { seg: number; tag: number } | null => {
+    if (!st) return st;
+    if (st.seg === c.seg && st.tag === c.tag) {
+      return r.select ?? null;
+    }
+    if (r.segs.length !== segs.length) {
+      if (st.seg === c.seg && st.tag > c.tag) {
+        // Same section: the tracked tag stays in the remaining
+        // section, one index earlier now that c.tag left it.
+        return { seg: st.seg, tag: st.tag - 1 };
+      }
+      if (st.seg > c.seg) {
+        return { seg: st.seg + 1, tag: st.tag };
+      }
+    }
+    return st;
+  };
   const applyWeightResult = (
     c: Chip,
     r: ReturnType<typeof setChipWeight>,
   ) => {
     if (r.segs === segs) return;
     onChange(serializePrompt(r.segs));
-    if (!openChip) return;
-    if (openChip.seg === c.seg && openChip.tag === c.tag) {
-      setOpenChip(r.select ?? null);
-    } else if (r.segs.length !== segs.length) {
-      if (openChip.seg === c.seg && openChip.tag > c.tag) {
-        // Same section: the open tag stays in the remaining
-        // section, one index earlier now that c.tag left it.
-        setOpenChip({ seg: openChip.seg, tag: openChip.tag - 1 });
-      } else if (openChip.seg > c.seg) {
-        setOpenChip({ seg: openChip.seg + 1, tag: openChip.tag });
-      }
-    }
+    setWeightChip((st) => followWeightEdit(st, c, r));
+    setEditChip((st) => followWeightEdit(st, c, r));
   };
   const applyWeight = (c: Chip, w: number) => {
     applyWeightResult(c, setChipWeight(segs, c.seg, c.tag, w));
@@ -717,39 +522,150 @@ export function TagField({
     if (r.segs !== segs) {
       onChange(serializePrompt(r.segs));
     }
-    // Committing the draft closes the Popover (#66) — it no
-    // longer follows the (possibly split-out) chip. Empty text
-    // deletes the chip and closes as well, as it did before.
-    setOpenChip(null);
+    // Committing the draft ends the inline edit session (#92;
+    // the Popover close of #66 before it) — it does not follow
+    // the (possibly split-out) chip. Empty text deletes the
+    // chip and ends the session as well, as it did before.
+    clearEditSession();
   };
-  // Suggestion picks in the chip editor (#65): the same commit as
-  // applyText — since #66 both paths close the Popover.
-  const applySuggestionText = (c: Chip, t: string) => {
-    applyText(c, t);
+
+  // --- Inline edit session operations (improvement #92) -------------
+  const editingChipObj = (): Chip | undefined =>
+    editChip
+      ? chips.find((c) => c.seg === editChip.seg && c.tag === editChip.tag)
+      : undefined;
+
+  const clearEditSession = () => {
+    setEditChip(null);
+    setEditDraft("");
+    setEditSuggestions([]);
+    setEditNoResults(false);
+    setEditHighlight(-1);
+    editNavRef.current = false;
+    editQueryRef.current = "";
+    if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
+    editAbortRef.current?.abort();
+  };
+
+  // Start editing a chip inline. A session already open on
+  // another chip commits first (the input's blur normally beats
+  // the tap to it and commits there; this keeps the rule in one
+  // place). The weight Popover closes: the two never share a
+  // chip session.
+  const startEdit = (c: Chip) => {
+    if (editChip && (editChip.seg !== c.seg || editChip.tag !== c.tag)) {
+      commitEdit();
+    }
+    setWeightChip(null);
+    setEditChip({ seg: c.seg, tag: c.tag });
+    setEditDraft(c.text);
+    setEditSuggestions([]);
+    setEditNoResults(false);
+    setEditHighlight(-1);
+    editNavRef.current = false;
+    editQueryRef.current = "";
+  };
+
+  const commitEdit = () => {
+    const c = editingChipObj();
+    if (!c) {
+      clearEditSession();
+      return;
+    }
+    applyText(c, editDraft);
+  };
+
+  const cancelEdit = () => {
+    clearEditSession();
+  };
+
+  // A picked edit suggestion commits immediately (#65, kept
+  // from the Popover editor): the picked name — with the
+  // draft's prefix re-attached — goes through the same commit
+  // as Enter, and the session ends.
+  const pickEditSuggestion = (sg: TagSuggestion) => {
+    const c = editingChipObj();
+    if (!c) return;
+    const { prefix: pre } = splitPrefix(editDraft);
+    applyText(c, pre ? `${pre}#${sg.name}` : sg.name);
+  };
+
+  const runEditQuery = (text: string) => {
+    if (!suggest) return;
+    // A leading source#/target#/mutual# prefix is not part of
+    // the tag being searched; it is re-attached when a
+    // suggestion is picked — same handling as the add-tag
+    // input (#22).
+    const q = splitPrefix(text).rest;
+    editQueryRef.current = q;
+    if (editDebounceRef.current) clearTimeout(editDebounceRef.current);
+    if (q.length < 2 || /[:{}[\]]/.test(q)) {
+      setEditSuggestions([]);
+      setEditNoResults(false);
+      return;
+    }
+    editDebounceRef.current = setTimeout(() => {
+      editAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      editAbortRef.current = ctrl;
+      void fetchTagSuggestions(
+        readStored(TOKEN_KEY) ?? "",
+        q,
+        model ?? "",
+        ctrl.signal,
+      ).then((list) => {
+        // Drop stale responses, mirroring the add input's guard.
+        if (editQueryRef.current === q) {
+          setEditSuggestions(list.slice(0, 8));
+          setEditNoResults(list.length === 0);
+        }
+      });
+    }, 250);
+  };
+
+  const onEditDraftChange = (v: string) => {
+    setEditDraft(v);
+    editNavRef.current = false;
+    setEditHighlight(-1);
+    runEditQuery(v);
+  };
+  // Keep a tracked chip (the weight Popover's anchor, or the
+  // inline edit session) pointing at the same tag across a
+  // deletion: deleting a tag from a multi-tag section shifts
+  // that section's later tags by one; deleting a section's only
+  // chip removes the segment and shifts later segments by one;
+  // deleting the tracked chip itself clears it.
+  const followDelete = (
+    st: { seg: number; tag: number } | null,
+    c: Chip,
+    segmentRemoved: boolean,
+  ): { seg: number; tag: number } | null => {
+    if (!st) return st;
+    if (st.seg === c.seg && st.tag === c.tag) return null;
+    if (!segmentRemoved) {
+      if (st.seg === c.seg && st.tag > c.tag) {
+        return { seg: st.seg, tag: st.tag - 1 };
+      }
+    } else if (st.seg > c.seg) {
+      return { seg: st.seg - 1, tag: st.tag };
+    }
+    return st;
   };
   // Delete from the chip menu (improvement #89; its trigger
   // segment was the one-tap × from #80, and this is the only
   // delete path since the editor's own delete button was
-  // removed in #84): the editor is not involved — it closes
-  // only when the deleted chip was its own, and an editor open
-  // on a later chip is shifted so it keeps pointing at the same
-  // tag (mirroring the follow logic in applyWeightResult).
-  // Deleting a tag from a multi-tag section shifts that
-  // section's later tags by one; deleting a section's only chip
-  // removes the segment and shifts later segments by one.
+  // removed in #84). Tracked chips follow the deletion via
+  // followDelete; deleting the chip being edited ends its
+  // session outright (draft included).
   const removeChip = (c: Chip) => {
     const segmentRemoved =
       chips.filter((o) => o.seg === c.seg).length <= 1;
     onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
-    if (!openChip) return;
-    if (openChip.seg === c.seg && openChip.tag === c.tag) {
-      setOpenChip(null);
-    } else if (!segmentRemoved) {
-      if (openChip.seg === c.seg && openChip.tag > c.tag) {
-        setOpenChip({ seg: openChip.seg, tag: openChip.tag - 1 });
-      }
-    } else if (openChip.seg > c.seg) {
-      setOpenChip({ seg: openChip.seg - 1, tag: openChip.tag });
+    setWeightChip((st) => followDelete(st, c, segmentRemoved));
+    if (editChip && editChip.seg === c.seg && editChip.tag === c.tag) {
+      clearEditSession();
+    } else {
+      setEditChip((st) => followDelete(st, c, segmentRemoved));
     }
   };
   const applyPrefix = (c: Chip, prefix: string | null) => {
@@ -758,14 +674,15 @@ export function TagField({
     );
   };
 
-  // Popover open-state routing for one chip. Base UI's dismissal
-  // replaces the old hand-rolled outside-tap listener (#36), with
-  // one exemption carried over from it: an outside press that lands
-  // on one of THIS field's chips is vetoed — a menu tap (Delete)
-  // must run removeChip's follow logic above (which may shift or
-  // close the selection), and a label tap on another chip opens
-  // that chip's popover instead; neither should be pre-empted by
-  // this popover closing.
+  // Weight Popover open-state routing for one chip. Base UI's
+  // dismissal replaces the old hand-rolled outside-tap listener
+  // (#36), with one exemption carried over from it: an outside
+  // press that lands on one of THIS field's chips is vetoed — a
+  // menu tap (Delete) must run removeChip's follow logic above
+  // (which may shift or close the selection), a label tap starts
+  // that chip's inline edit (which closes this Popover itself),
+  // and a badge tap on another chip opens that chip's Popover
+  // instead; none should be pre-empted by this popover closing.
   // Presses anywhere else (including other fields' chips) close it.
   const handleOpenChange =
     (c: Chip) =>
@@ -774,7 +691,7 @@ export function TagField({
       details: { reason: string; event: Event; cancel: () => void },
     ) => {
       if (open) {
-        setOpenChip({ seg: c.seg, tag: c.tag });
+        setWeightChip({ seg: c.seg, tag: c.tag });
         return;
       }
       if (details.reason === "outside-press") {
@@ -789,18 +706,11 @@ export function TagField({
           return;
         }
       }
-      setOpenChip(null);
+      setWeightChip(null);
     };
 
-  const editorFor = (c: Chip) => (
-    <ChipEditorContent
-      chip={c}
-      suggest={!!suggest}
-      model={model}
-      onApplyText={(t) => applyText(c, t)}
-      onPickSuggestion={(t) => applySuggestionText(c, t)}
-      onSetWeight={(w) => applyWeight(c, w)}
-    />
+  const weightContentFor = (c: Chip) => (
+    <ChipWeightContent chip={c} onSetWeight={(w) => applyWeight(c, w)} />
   );
 
   // The chip's trailing segment is a menu trigger (improvement
@@ -812,10 +722,10 @@ export function TagField({
   // the RadioGroup: Base UI's GroupLabel throws (its error #31)
   // without a Menu.Group / Menu.RadioGroup context ancestor,
   // which kept the character-field menu from opening at all
-  // (#91). Menu picks land outside the
-  // editor Popover, so an editor open on this chip closes
-  // through its normal dismissal; removeChip's follow logic
-  // keeps any other open editor consistent.
+  // (#91). Menu picks land outside the weight Popover, so a
+  // Popover open on this chip closes through its normal
+  // dismissal; removeChip's follow logic keeps any tracked
+  // chip consistent.
   const chipMenu = (c: Chip) => (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -863,17 +773,17 @@ export function TagField({
     </DropdownMenu>
   );
 
-  // React keys for the chip Popovers (improvement #82): keyed by
-  // chip text + occurrence, NOT by segment/tag coordinates. A
-  // weight edit that splits a section renumbers the coordinates
-  // of the chips in it; with coordinate keys the open editor's
-  // Popover remounted on the split, killing the weight slider's
-  // drag after its first step. Text keys survive the renumbering
-  // (a split never changes the flattened chip order), so the
-  // editor instance — and an in-progress drag — stays alive and
-  // keeps adjusting the same tag. (The data-chip-key attribute
-  // keeps the coordinates: activation #76 and the outside-press
-  // veto address chips by position.)
+  // React keys for the chips (improvement #82): keyed by chip
+  // text + occurrence, NOT by segment/tag coordinates. A weight
+  // edit that splits a section renumbers the coordinates of the
+  // chips in it; with coordinate keys the open weight Popover
+  // remounted on the split, killing the slider's drag after its
+  // first step. Text keys survive the renumbering (a split never
+  // changes the flattened chip order), so the Popover instance —
+  // and an in-progress drag — stays alive and keeps adjusting
+  // the same tag. (The data-chip-key attribute keeps the
+  // coordinates: activation #76 and the outside-press veto
+  // address chips by position.)
   const chipReactKeys = new Map<Chip, string>();
   {
     const seen = new Map<string, number>();
@@ -894,19 +804,204 @@ export function TagField({
       <div ref={chipScrollerRef} className="max-h-44 overflow-y-auto p-0.5">
         <div className="flex flex-wrap items-center gap-2">
         {visibleChips.map((c) => {
-          const active =
-            !!openChip && openChip.seg === c.seg && openChip.tag === c.tag;
+          const weightActive =
+            !!weightChip && weightChip.seg === c.seg && weightChip.tag === c.tag;
+          const editing =
+            !!editChip && editChip.seg === c.seg && editChip.tag === c.tag;
+          const active = weightActive || editing;
           const neg = (c.weight ?? 1) < 0;
+          const weight = c.weight ?? 1;
+
+          // The label segment — or, while this chip is being
+          // edited, the inline editor (#92): an input holding
+          // the draft, plus a ✓ segment that commits it. Enter
+          // commits (or picks an arrow-highlighted suggestion),
+          // Escape cancels, and the input losing focus commits —
+          // see the edit session helpers above. While editing,
+          // the pill takes the full row so the input has room.
+          const labelOrEditor = editing ? (
+            <>
+              <span className="flex min-w-0 flex-1">
+                <input
+                  ref={editInputRef}
+                  type="text"
+                  value={editDraft}
+                  aria-label="Tag text"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(e) => onEditDraftChange(e.target.value)}
+                  onBlur={() => commitEdit()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (editNavRef.current && editHighlight >= 0) {
+                        const sg = editSuggestions[editHighlight];
+                        if (sg) {
+                          pickEditSuggestion(sg);
+                          return;
+                        }
+                      }
+                      commitEdit();
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      cancelEdit();
+                    } else if (
+                      e.key === "ArrowDown" ||
+                      e.key === "ArrowUp"
+                    ) {
+                      if (editSuggestions.length === 0) return;
+                      e.preventDefault();
+                      editNavRef.current = true;
+                      setEditHighlight((h) =>
+                        e.key === "ArrowDown"
+                          ? Math.min(editSuggestions.length - 1, h + 1)
+                          : Math.max(0, h < 0 ? 0 : h - 1),
+                      );
+                    }
+                  }}
+                  className={cn(
+                    "min-w-0 flex-1 bg-transparent px-3 text-tag leading-snug outline-none",
+                    c.raw ? "py-1.5" : "h-full",
+                  )}
+                />
+              </span>
+              <button
+                type="button"
+                aria-label="Apply text"
+                className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => commitEdit()}
+              >
+                <Check size={16} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              aria-label={c.text}
+              onClick={() => startEdit(c)}
+              className={cn(
+                "flex min-w-0 touch-manipulation items-center px-3 text-tag leading-snug",
+                c.raw && "py-1.5",
+              )}
+            >
+              <span className="truncate">{c.text}</span>
+            </button>
+          );
+
+          // The weight badge (non-raw chips only): the weight
+          // Popover's trigger, leading the pill since #92 —
+          // mirroring NovelAI's own weight-first syntax
+          // (1.3:: tag::) — and rendered on every chip
+          // (1 shown muted) — before, the weight showed only on
+          // already-weighted chips, inside the label.
+          const badge = !c.raw ? (
+            <PopoverTrigger
+              aria-label={`Tag weight: ${c.text}`}
+              className={cn(
+                "flex shrink-0 touch-manipulation items-center px-2 text-tag-badge font-semibold active:bg-accent",
+                neg
+                  ? "text-err"
+                  : weight === 1
+                    ? "text-muted-foreground"
+                    : "text-foreground",
+              )}
+            >
+              {fmtWeight(weight)}
+            </PopoverTrigger>
+          ) : null;
+
+          // The edit suggestions, in flow directly under the
+          // editing chip (#92): a full-width row of the same
+          // relay items the Popover editor showed (#60), capped
+          // at three rows with internal scrolling (#85). A pick
+          // commits immediately (#65); the pointer-down is
+          // default-prevented so the input keeps focus until the
+          // pick itself commits (its blur would commit the
+          // draft first otherwise).
+          const editList =
+            editing &&
+            !!suggest &&
+            !c.raw &&
+            (editSuggestions.length > 0 || editNoResults) ? (
+              <div className="max-h-27 w-full overflow-y-auto rounded-md border border-border bg-background">
+                {editNoResults ? (
+                  <p className="px-3.5 py-3 text-suggest text-muted-foreground">
+                    No suggestions
+                  </p>
+                ) : (
+                  editSuggestions.map((sg, i) => (
+                    <button
+                      key={sg.name}
+                      type="button"
+                      className={cn(
+                        "flex min-h-tap w-full items-center px-3.5 text-left",
+                        i === editHighlight && "bg-accent",
+                      )}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        pickEditSuggestion(sg);
+                      }}
+                    >
+                      <span className="text-suggest">{sg.name}</span>
+                      {sg.mine > 0 ? (
+                        <span className="ml-auto text-xs font-medium text-primary">
+                          Frequently Used
+                        </span>
+                      ) : sg.count !== null ? (
+                        <span className="ml-auto text-tag-badge text-muted-foreground">
+                          {fmtCount(sg.count)}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null;
+
           if (c.raw) {
-            // Raw chunks (brace/bracket syntax) have no weight to
-            // step: the label tap opens the popover's text editing,
-            // and the trailing segment opens the chip menu (#89)
-            // — the same joined-pill shape as the non-raw groups
-            // below.
+            // Raw chunks (brace/bracket syntax) have no weight:
+            // the pill is [label][menu] — the label tap edits
+            // the text inline (#92), and the trailing segment
+            // opens the chip menu (#89).
             return (
+              <Fragment key={chipReactKeys.get(c)}>
+                <div
+                  role="group"
+                  data-chip
+                  data-chip-key={`${c.seg}:${c.tag}`}
+                  aria-label={c.text}
+                  className={cn(
+                    "inline-flex max-w-full items-stretch divide-x divide-border overflow-hidden rounded-full border border-dashed text-muted-foreground select-none",
+                    editing && "w-full",
+                    active && "border-primary ring-1 ring-primary",
+                  )}
+                >
+                  {labelOrEditor}
+                  {chipMenu(c)}
+                </div>
+                {editList}
+              </Fragment>
+            );
+          }
+          // Non-raw chips are a joined [badge][label][menu]
+          // pill: the badge opens the weight Popover (#82
+          // slider), the label tap edits the text inline (#92),
+          // and the trailing segment opens the chip menu (#89).
+          // Hand-rolled rather than shadcn's ButtonGroup: that
+          // component styles each button's own border and corner
+          // radius, which fights this single-pill design (one
+          // container border, group-wide active/negative states,
+          // truncating label).
+          return (
+            <Fragment key={chipReactKeys.get(c)}>
               <Popover
-                key={chipReactKeys.get(c)}
-                open={active}
+                open={weightActive}
                 onOpenChange={handleOpenChange(c)}
               >
                 <div
@@ -915,74 +1010,27 @@ export function TagField({
                   data-chip-key={`${c.seg}:${c.tag}`}
                   aria-label={c.text}
                   className={cn(
-                    "inline-flex max-w-full items-stretch divide-x divide-border overflow-hidden rounded-full border border-dashed text-muted-foreground select-none",
+                    "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",
+                    neg
+                      ? "divide-err/30 border-err/50 text-err"
+                      : "divide-border border-border",
+                    editing && "w-full",
                     active && "border-primary ring-1 ring-primary",
                   )}
                 >
-                  <PopoverTrigger className="flex min-w-0 touch-manipulation items-center px-3 py-1.5 text-tag leading-snug">
-                    <span className="truncate">{c.text}</span>
-                  </PopoverTrigger>
+                  {badge}
+                  {labelOrEditor}
                   {chipMenu(c)}
                 </div>
                 <PopoverContent
                   sideOffset={6}
                   className="w-[min(320px,90vw)]"
                 >
-                  {editorFor(c)}
+                  {weightContentFor(c)}
                 </PopoverContent>
               </Popover>
-            );
-          }
-          // Non-raw chips are a joined [label][menu] pill: the
-          // label is the Popover trigger for the chip editor
-          // (text / the #82 weight slider), and the trailing
-          // segment opens the chip menu (#89). The
-          // [−][+] weight step zones added in #34 were removed in
-          // #83 — the editor's slider is the only weight control
-          // now. Hand-rolled rather than shadcn's ButtonGroup:
-          // that component styles each button's own border and
-          // corner radius, which fights this single-pill design
-          // (one container border, group-wide active/negative
-          // states, truncating label).
-          return (
-            <Popover
-              key={chipReactKeys.get(c)}
-              open={active}
-              onOpenChange={handleOpenChange(c)}
-            >
-              <div
-                role="group"
-                data-chip
-                data-chip-key={`${c.seg}:${c.tag}`}
-                aria-label={c.text}
-                className={cn(
-                  "inline-flex h-tap max-w-full items-stretch divide-x overflow-hidden rounded-full border bg-card select-none",
-                  neg ? "divide-err/30 border-err/50 text-err" : "divide-border border-border",
-                  active && "border-primary ring-1 ring-primary",
-                )}
-              >
-                <PopoverTrigger className="flex min-w-0 touch-manipulation items-center gap-1.5 px-3 text-tag leading-snug">
-                  <span className="truncate">{c.text}</span>
-                  {c.weight !== null && (
-                    <span
-                      className={cn(
-                        "shrink-0 text-tag-badge font-semibold",
-                        neg ? "text-err" : "text-muted-foreground",
-                      )}
-                    >
-                      ×{fmtWeight(c.weight)}
-                    </span>
-                  )}
-                </PopoverTrigger>
-                {chipMenu(c)}
-              </div>
-              <PopoverContent
-                sideOffset={6}
-                className="w-[min(320px,90vw)]"
-              >
-                {editorFor(c)}
-              </PopoverContent>
-            </Popover>
+              {editList}
+            </Fragment>
           );
         })}
         {filtering && visibleChips.length === 0 && (
