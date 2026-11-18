@@ -275,8 +275,9 @@ function ChipEditorContent({
 // #28): the chips plus an inline "add tag" input with the
 // suggestion combobox (#22, #54) are the whole editing UI — there is no
 // free-text textarea anymore. Weight stepping lives ON the chips
-// themselves (#34): each non-raw chip is a [−][label][+] button
-// group. Tapping a chip's label opens its editor Popover (#50) with
+// themselves (#34): each non-raw chip is a [−][label][+][×] button
+// group — the trailing × deletes the chip in one tap (#80), no
+// editor needed. Tapping a chip's label opens its editor Popover (#50) with
 // the text / prefix / delete controls. The field's string value
 // remains the single source of truth: chips are derived from it on
 // every render, and every edit rewrites it through the same setter,
@@ -515,6 +516,30 @@ export function TagField({
     onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
     setOpenChip(null);
   };
+  // One-tap delete from the chip's own × segment (improvement
+  // #80): the same deleteChip path as the editor's delete button,
+  // but the editor is not involved — it closes only when the
+  // deleted chip was its own, and an editor open on a later chip
+  // is shifted so it keeps pointing at the same tag (mirroring
+  // the stepper follow logic in stepChip). Deleting a tag from a
+  // multi-tag section shifts that section's later tags by one;
+  // deleting a section's only chip removes the segment and shifts
+  // later segments by one.
+  const removeChip = (c: Chip) => {
+    const segmentRemoved =
+      chips.filter((o) => o.seg === c.seg).length <= 1;
+    onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
+    if (!openChip) return;
+    if (openChip.seg === c.seg && openChip.tag === c.tag) {
+      setOpenChip(null);
+    } else if (!segmentRemoved) {
+      if (openChip.seg === c.seg && openChip.tag > c.tag) {
+        setOpenChip({ seg: openChip.seg, tag: openChip.tag - 1 });
+      }
+    } else if (openChip.seg > c.seg) {
+      setOpenChip({ seg: openChip.seg - 1, tag: openChip.tag });
+    }
+  };
   const applyPrefix = (c: Chip, prefix: string | null) => {
     onChange(
       serializePrompt(setChipPrefix(segs, c.seg, c.tag, prefix)),
@@ -582,25 +607,41 @@ export function TagField({
           const neg = (c.weight ?? 1) < 0;
           if (c.raw) {
             // Raw chunks (brace/bracket syntax) have no weight to
-            // step: a plain chip whose tap opens the popover's text
-            // editing, as before.
+            // step: the label tap opens the popover's text editing,
+            // and a trailing × segment deletes the chunk in one
+            // tap (#80) — the same joined-pill shape as the
+            // non-raw groups below.
             return (
               <Popover
                 key={`${c.seg}:${c.tag}`}
                 open={active}
                 onOpenChange={handleOpenChange(c)}
               >
-                <PopoverTrigger
+                <div
+                  role="group"
                   data-chip
                   data-chip-key={`${c.seg}:${c.tag}`}
+                  aria-label={c.text}
                   className={cn(
-                    "inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-tag leading-snug",
-                    "border-dashed text-muted-foreground",
+                    "inline-flex max-w-full items-stretch divide-x divide-border overflow-hidden rounded-full border border-dashed text-muted-foreground select-none",
                     active && "border-primary ring-1 ring-primary",
                   )}
                 >
-                  <span className="truncate">{c.text}</span>
-                </PopoverTrigger>
+                  <PopoverTrigger className="flex min-w-0 touch-manipulation items-center px-3 py-1.5 text-tag leading-snug">
+                    <span className="truncate">{c.text}</span>
+                  </PopoverTrigger>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${c.text}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeChip(c);
+                    }}
+                    className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
                 <PopoverContent
                   sideOffset={6}
                   className="w-[min(320px,90vw)]"
@@ -610,10 +651,11 @@ export function TagField({
               </Popover>
             );
           }
-          // Non-raw chips are a joined [−][label][+] button group
+          // Non-raw chips are a joined [−][label][+][×] button group
           // (improvement #34): the −/+ zones step the weight in
           // place; the label between them is the Popover trigger for
-          // the chip editor (text / prefix / delete). Hand-rolled
+          // the chip editor (text / prefix / delete); the trailing
+          // × deletes the chip in one tap (#80). Hand-rolled
           // rather than shadcn's ButtonGroup: that component styles
           // each button's own border and corner radius, which fights
           // this single-pill design (one container border, group-wide
@@ -669,6 +711,17 @@ export function TagField({
                   className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
                 >
                   <Plus size={16} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${c.text}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeChip(c);
+                  }}
+                  className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+                >
+                  <X size={16} />
                 </button>
               </div>
               <PopoverContent
