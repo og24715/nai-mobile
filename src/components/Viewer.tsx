@@ -25,6 +25,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "cn";
 
@@ -42,6 +43,11 @@ interface Props {
   // #55).
   busy: boolean;
   items: RecentItem[];
+  // The form's selected generation size ("832x1216"); while a
+  // generation is in flight with no images to show, a Skeleton
+  // with this aspect ratio stands in the hero area (improvement
+  // #74).
+  formSize: string;
   onSelect: (url: string) => void;
   onRestoreHero: () => void;
   onUpscale: () => void;
@@ -86,8 +92,10 @@ interface Props {
 // button (bottom-right) toggling its favorite state, favorited
 // thumbnails get a heart badge, and the Recent header has a
 // "Delete Others" bulk-delete with a confirmation dialog
-// (improvement #61).
-export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
+// (improvement #61). While a generation is in flight and there
+// are no images at all, a Skeleton with the selected size's
+// aspect ratio fills the hero area (improvement #74).
+export function Viewer({ heroUrl, status, busy, items, formSize, onSelect, onRestoreHero, onUpscale, upscaling, onEnhance, enhancing, onHeroLoad, onDownloadClean, onUseAsBaseImage, heroFavorite, onToggleFavorite, othersCount, favoritesCount, onDeleteOthers, deletingOthers }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   // --- Hero carousel selection sync (improvement #71) ---
@@ -140,8 +148,21 @@ export function Viewer({ heroUrl, status, busy, items, onSelect, onRestoreHero, 
     }
   }, [carouselApi, heroIndex, items]);
 
+  // Aspect ratio for the busy-with-no-images Skeleton (improvement
+  // #74), from the form's selected size; falls back to the default
+  // portrait size if the stored value doesn't parse.
+  const [fsw, fsh] = formSize.split("x").map(Number);
+  const skeletonAspect =
+    fsw > 0 && fsh > 0 ? `${fsw} / ${fsh}` : "832 / 1216";
+
   return (
     <>
+      {busy && items.length === 0 && (
+        <Skeleton
+          className="w-full rounded-none"
+          style={{ aspectRatio: skeletonAspect }}
+        />
+      )}
       {items.length > 0 && (
         <div className="relative">
           <ContextMenu>

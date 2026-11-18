@@ -699,7 +699,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(url, w, h) => setHeroSize({ url, w, h })} onDownloadClean={downloadCleanHero} onUseAsBaseImage={useHeroAsBaseImage} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
+      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} formSize={size} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(url, w, h) => setHeroSize({ url, w, h })} onDownloadClean={downloadCleanHero} onUseAsBaseImage={useHeroAsBaseImage} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
