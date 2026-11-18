@@ -36,6 +36,7 @@ import {
   stripPngTextChunks,
 } from "@/lib/pngStrip";
 import { TOKEN_KEY, readStored } from "@/lib/storage";
+import { toast } from "sonner";
 
 export default function MainPage() {
   // Form fields, each persisted to localStorage under "nai.<name>".
@@ -171,7 +172,15 @@ export default function MainPage() {
   // from the 30 shown items.
   const [recentMeta, setRecentMeta] = useState({ total: 0, favoriteCount: 0 });
   const [deletingOthers, setDeletingOthers] = useState(false);
-  const [status, setStatus] = useState<StatusState>({ kind: "", text: "" });
+  const [status, setStatusState] = useState<StatusState>({ kind: "", text: "" });
+  // Every error that lands in the status line also fires an error
+  // toast carrying the same text (improvement #25) — upstream
+  // messages stay verbatim. The status line itself is unchanged,
+  // and ok / info states stay toast-free.
+  const setStatus = (s: StatusState) => {
+    setStatusState(s);
+    if (s.kind === "err") toast.error(s.text);
+  };
   const [generating, setGenerating] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
