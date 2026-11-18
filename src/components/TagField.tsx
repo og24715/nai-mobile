@@ -808,7 +808,11 @@ export function TagField({
   // holds Delete — the same removeChip path the × ran — and,
   // for non-raw chips in character fields only, the Prefix
   // radio group that used to live in the chip editor, wired to
-  // the same applyPrefix path. Menu picks land outside the
+  // the same applyPrefix path. The Prefix label renders inside
+  // the RadioGroup: Base UI's GroupLabel throws (its error #31)
+  // without a Menu.Group / Menu.RadioGroup context ancestor,
+  // which kept the character-field menu from opening at all
+  // (#91). Menu picks land outside the
   // editor Popover, so an editor open on this chip closes
   // through its normal dismissal; removeChip's follow logic
   // keeps any other open editor consistent.
@@ -823,7 +827,6 @@ export function TagField({
       <DropdownMenuContent align="end">
         {!!character && !c.raw && (
           <>
-            <DropdownMenuLabel>Prefix</DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={splitPrefix(c.text).prefix ?? ""}
               onValueChange={(v) =>
@@ -833,6 +836,7 @@ export function TagField({
                 )
               }
             >
+              <DropdownMenuLabel>Prefix</DropdownMenuLabel>
               <DropdownMenuRadioItem value="">
                 No prefix
               </DropdownMenuRadioItem>
