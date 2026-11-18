@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Trash2, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,10 +64,12 @@ function fmtCount(n: number): string {
 // holding the chip's own text (Enter or ✓ applies it through
 // setChipText — in place for plain/single-tag chips, split-out for
 // a tag inside a multi-tag section, verbatim body replacement for
-// raw chunks; empty text deletes the chip), a delete button, and —
-// for non-raw chips in character fields only — the
+// raw chunks; empty text deletes the chip) and — for non-raw
+// chips in character fields only — the
 // source#/target#/mutual# prefix selector. Raw chunks get only the
-// text row plus delete. Non-raw chips also get a weight slider
+// text row. The editor carried its own delete button until #84
+// removed it: deletion now lives only on the chip's own ×
+// segment (#80). Non-raw chips also get a weight slider
 // (improvement #82): range −3..+3 in 0.05 steps, applied live
 // through setChipWeight — exactly 1.0 unwraps to a plain tag,
 // and a tag inside a multi-tag section splits out at the new
@@ -97,7 +99,6 @@ function ChipEditorContent({
   onPickSuggestion,
   onSetWeight,
   onPrefix,
-  onDelete,
 }: {
   chip: Chip;
   character: boolean;
@@ -107,7 +108,6 @@ function ChipEditorContent({
   onPickSuggestion: (t: string) => void;
   onSetWeight: (w: number) => void;
   onPrefix: (p: string | null) => void;
-  onDelete: () => void;
 }) {
   const [draft, setDraft] = useState(chip.text);
 
@@ -227,15 +227,6 @@ function ChipEditorContent({
         >
           <Check size={18} />
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label="Delete this tag"
-          className="h-tap w-tap shrink-0 p-0 text-muted-foreground"
-          onClick={onDelete}
-        >
-          <Trash2 size={16} />
-        </Button>
       </div>
       {suggestEnabled && editSuggestions.length > 0 && (
         <ul className="flex flex-col overflow-hidden rounded-md border border-border bg-background">
@@ -312,7 +303,7 @@ function ChipEditorContent({
 // free-text textarea anymore. Each non-raw chip is a [label][×]
 // pill — the trailing × deletes the chip in one tap (#80), no
 // editor needed. Tapping a chip's label opens its editor Popover
-// (#50) with the text / prefix / delete controls and the weight
+// (#50) with the text / prefix controls and the weight
 // slider (#82); the [−][+] step zones the chips carried in #34
 // were removed in #83, leaving the slider as the only weight
 // control. The field's string value
@@ -636,13 +627,10 @@ export function TagField({
   const applySuggestionText = (c: Chip, t: string) => {
     applyText(c, t);
   };
-  const applyDelete = (c: Chip) => {
-    onChange(serializePrompt(deleteChip(segs, c.seg, c.tag)));
-    setOpenChip(null);
-  };
   // One-tap delete from the chip's own × segment (improvement
-  // #80): the same deleteChip path as the editor's delete button,
-  // but the editor is not involved — it closes only when the
+  // #80; the only delete path since the editor's own delete
+  // button was removed in #84): the editor is not involved — it
+  // closes only when the
   // deleted chip was its own, and an editor open on a later chip
   // is shifted so it keeps pointing at the same tag (mirroring
   // the follow logic in applyWeightResult). Deleting a tag from a
@@ -714,7 +702,6 @@ export function TagField({
       onPickSuggestion={(t) => applySuggestionText(c, t)}
       onSetWeight={(w) => applyWeight(c, w)}
       onPrefix={(p) => applyPrefix(c, p)}
-      onDelete={() => applyDelete(c)}
     />
   );
 
@@ -800,7 +787,7 @@ export function TagField({
           }
           // Non-raw chips are a joined [label][×] pill: the label
           // is the Popover trigger for the chip editor (text /
-          // prefix / delete / the #82 weight slider), and the
+          // prefix / the #82 weight slider), and the
           // trailing × deletes the chip in one tap (#80). The
           // [−][+] weight step zones added in #34 were removed in
           // #83 — the editor's slider is the only weight control
