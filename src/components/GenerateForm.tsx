@@ -124,9 +124,13 @@ function numOr(v: string, fallback: number): number {
 }
 
 // Accordion sections in the form modal, collapsible by category so the
-// modal needs less scrolling. The open set persists in localStorage
-// under "nai.accordion" (JSON array of section values); first-ever use
-// opens only the prompt section.
+// modal needs less scrolling. The accordion is exclusive (improvement
+// #69): at most one section is open at a time, and tapping the open
+// section's header closes it again. The open section persists in
+// localStorage under "nai.accordion" (a JSON array holding zero or one
+// section value); arrays stored by the earlier multi-open version load
+// as their first entry only. First-ever use opens only the prompt
+// section.
 const SECTION_VALUES = ["prompt", "settings", "characters", "references"] as const;
 
 function loadOpenSections(): string[] {
@@ -135,11 +139,14 @@ function loadOpenSections(): string[] {
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed.filter(
+        const valid = parsed.filter(
           (v): v is string =>
             typeof v === "string" &&
             (SECTION_VALUES as readonly string[]).includes(v),
         );
+        // Exclusive accordion (#69): keep at most the first stored
+        // section; longer arrays come from the multi-open era.
+        return valid.slice(0, 1);
       }
     }
   } catch {
@@ -167,9 +174,13 @@ export function GenerateForm({ form }: { form: FormState }) {
 
   const [openSections, setOpenSections] = useState<string[]>(loadOpenSections);
   const toggleSections = (next: string[]) => {
-    setOpenSections(next);
+    // Exclusive accordion (#69): with multiple off, Base UI reports at
+    // most one open section; cap defensively anyway so a longer value
+    // can never reach state or storage (last entry = newest intent).
+    const single = next.slice(-1);
+    setOpenSections(single);
     try {
-      localStorage.setItem("nai.accordion", JSON.stringify(next));
+      localStorage.setItem("nai.accordion", JSON.stringify(single));
     } catch {
       // Storage unavailable — the in-memory state still applies.
     }
@@ -218,7 +229,7 @@ export function GenerateForm({ form }: { form: FormState }) {
         top lets its opaque box cover that band completely. The
         negative offset has no effect while a header is not stuck,
         so the resting layout is unchanged. */}
-    <Accordion multiple value={openSections} onValueChange={toggleSections}>
+    <Accordion multiple={false} value={openSections} onValueChange={toggleSections}>
       <AccordionItem value="prompt">
         <AccordionTrigger className="py-3.5 text-xl font-semibold" headerClassName="sticky top-[-12px] z-20 border-b border-border bg-background">
           Prompt
