@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Ellipsis, X } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,9 +15,15 @@ import {
 } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Slider } from "@/components/ui/slider";
 import {
   Combobox,
@@ -68,12 +74,14 @@ function fmtCount(n: number): string {
 // holding the chip's own text (Enter or ✓ applies it through
 // setChipText — in place for plain/single-tag chips, split-out for
 // a tag inside a multi-tag section, verbatim body replacement for
-// raw chunks; empty text deletes the chip) and — for non-raw
-// chips in character fields only — the
-// source#/target#/mutual# prefix selector. Raw chunks get only the
-// text row. The editor carried its own delete button until #84
-// removed it: deletion now lives only on the chip's own ×
-// segment (#80). Non-raw chips also get a weight slider
+// raw chunks; empty text deletes the chip). Raw chunks get
+// only the text row. The editor carried its own delete button
+// until #84 removed it and a prefix selector until #89: both
+// now live in the menu on the chip's trailing segment (#89,
+// formerly the one-tap × from #80) — Delete for every chip,
+// plus the source#/target#/mutual# prefix radio group for
+// non-raw chips in character fields. Non-raw chips also get a
+// weight slider
 // (improvement #82): range −3..+3 in 0.05 steps, applied live
 // through setChipWeight — exactly 1.0 unwraps to a plain tag,
 // and a tag inside a multi-tag section splits out at the new
@@ -96,22 +104,18 @@ function fmtCount(n: number): string {
 // Enter commits the draft and closes the Popover too (#66).
 function ChipEditorContent({
   chip,
-  character,
   suggest,
   model,
   onApplyText,
   onPickSuggestion,
   onSetWeight,
-  onPrefix,
 }: {
   chip: Chip;
-  character: boolean;
   suggest?: boolean;
   model?: string;
   onApplyText: (t: string) => void;
   onPickSuggestion: (t: string) => void;
   onSetWeight: (w: number) => void;
-  onPrefix: (p: string | null) => void;
 }) {
   const [draft, setDraft] = useState(chip.text);
 
@@ -192,7 +196,6 @@ function ChipEditorContent({
     setEditSuggestions([]);
     editQueryRef.current = "";
   }, [chip.text]);
-  const prefix = splitPrefix(chip.text).prefix;
   // Plain tags carry no weight (null) and behave as 1.0.
   const weight = chip.weight ?? 1;
 
@@ -284,23 +287,6 @@ function ChipEditorContent({
           />
         </div>
       )}
-      {!chip.raw && character && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <NativeSelect
-            aria-label="Prefix"
-            value={prefix ?? ""}
-            onChange={(e) =>
-              onPrefix(e.target.value === "" ? null : e.target.value)
-            }
-            className="[&>select]:h-tap"
-          >
-            <NativeSelectOption value="">No prefix</NativeSelectOption>
-            <NativeSelectOption value="source">source#</NativeSelectOption>
-            <NativeSelectOption value="target">target#</NativeSelectOption>
-            <NativeSelectOption value="mutual">mutual#</NativeSelectOption>
-          </NativeSelect>
-        </div>
-      )}
     </div>
   );
 }
@@ -308,11 +294,12 @@ function ChipEditorContent({
 // A prompt field edited ONLY through its tag chips (improvements #21,
 // #28): the chips plus an inline "add tag" input with the
 // suggestion combobox (#22, #54) are the whole editing UI — there is no
-// free-text textarea anymore. Each non-raw chip is a [label][×]
-// pill — the trailing × deletes the chip in one tap (#80), no
-// editor needed. Tapping a chip's label opens its editor Popover
-// (#50) with the text / prefix controls and the weight
-// slider (#82); the [−][+] step zones the chips carried in #34
+// free-text textarea anymore. Each non-raw chip is a
+// [label][menu] pill — the trailing segment opens the chip menu
+// (#89: Delete and, in character fields, Prefix). Tapping a
+// chip's label opens its editor Popover (#50) with the text
+// controls and the weight slider (#82); the [−][+] step zones
+// the chips carried in #34
 // were removed in #83, leaving the slider as the only weight
 // control. The field's string value
 // remains the single source of truth: chips are derived from it on
@@ -635,16 +622,16 @@ export function TagField({
   const applySuggestionText = (c: Chip, t: string) => {
     applyText(c, t);
   };
-  // One-tap delete from the chip's own × segment (improvement
-  // #80; the only delete path since the editor's own delete
-  // button was removed in #84): the editor is not involved — it
-  // closes only when the
-  // deleted chip was its own, and an editor open on a later chip
-  // is shifted so it keeps pointing at the same tag (mirroring
-  // the follow logic in applyWeightResult). Deleting a tag from a
-  // multi-tag section shifts that section's later tags by one;
-  // deleting a section's only chip removes the segment and shifts
-  // later segments by one.
+  // Delete from the chip menu (improvement #89; its trigger
+  // segment was the one-tap × from #80, and this is the only
+  // delete path since the editor's own delete button was
+  // removed in #84): the editor is not involved — it closes
+  // only when the deleted chip was its own, and an editor open
+  // on a later chip is shifted so it keeps pointing at the same
+  // tag (mirroring the follow logic in applyWeightResult).
+  // Deleting a tag from a multi-tag section shifts that
+  // section's later tags by one; deleting a section's only chip
+  // removes the segment and shifts later segments by one.
   const removeChip = (c: Chip) => {
     const segmentRemoved =
       chips.filter((o) => o.seg === c.seg).length <= 1;
@@ -669,11 +656,11 @@ export function TagField({
   // Popover open-state routing for one chip. Base UI's dismissal
   // replaces the old hand-rolled outside-tap listener (#36), with
   // one exemption carried over from it: an outside press that lands
-  // on one of THIS field's chips is vetoed — a × tap must run
-  // removeChip's follow logic above (which may shift or close the
-  // selection), and a label tap on another chip opens that chip's
-  // popover instead; neither should be pre-empted by this popover
-  // closing.
+  // on one of THIS field's chips is vetoed — a menu tap (Delete)
+  // must run removeChip's follow logic above (which may shift or
+  // close the selection), and a label tap on another chip opens
+  // that chip's popover instead; neither should be pre-empted by
+  // this popover closing.
   // Presses anywhere else (including other fields' chips) close it.
   const handleOpenChange =
     (c: Chip) =>
@@ -703,14 +690,68 @@ export function TagField({
   const editorFor = (c: Chip) => (
     <ChipEditorContent
       chip={c}
-      character={!!character}
       suggest={!!suggest}
       model={model}
       onApplyText={(t) => applyText(c, t)}
       onPickSuggestion={(t) => applySuggestionText(c, t)}
       onSetWeight={(w) => applyWeight(c, w)}
-      onPrefix={(p) => applyPrefix(c, p)}
     />
+  );
+
+  // The chip's trailing segment is a menu trigger (improvement
+  // #89; it was the one-tap × delete added in #80). The menu
+  // holds Delete — the same removeChip path the × ran — and,
+  // for non-raw chips in character fields only, the Prefix
+  // radio group that used to live in the chip editor, wired to
+  // the same applyPrefix path. Menu picks land outside the
+  // editor Popover, so an editor open on this chip closes
+  // through its normal dismissal; removeChip's follow logic
+  // keeps any other open editor consistent.
+  const chipMenu = (c: Chip) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Tag menu: ${c.text}`}
+        className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
+      >
+        <Ellipsis size={16} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {!!character && !c.raw && (
+          <>
+            <DropdownMenuLabel>Prefix</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={splitPrefix(c.text).prefix ?? ""}
+              onValueChange={(v) =>
+                applyPrefix(
+                  c,
+                  typeof v === "string" && v !== "" ? v : null,
+                )
+              }
+            >
+              <DropdownMenuRadioItem value="">
+                No prefix
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="source">
+                source#
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="target">
+                target#
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="mutual">
+                mutual#
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => removeChip(c)}
+        >
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   // React keys for the chip Popovers (improvement #82): keyed by
@@ -750,9 +791,9 @@ export function TagField({
           if (c.raw) {
             // Raw chunks (brace/bracket syntax) have no weight to
             // step: the label tap opens the popover's text editing,
-            // and a trailing × segment deletes the chunk in one
-            // tap (#80) — the same joined-pill shape as the
-            // non-raw groups below.
+            // and the trailing segment opens the chip menu (#89)
+            // — the same joined-pill shape as the non-raw groups
+            // below.
             return (
               <Popover
                 key={chipReactKeys.get(c)}
@@ -772,17 +813,7 @@ export function TagField({
                   <PopoverTrigger className="flex min-w-0 touch-manipulation items-center px-3 py-1.5 text-tag leading-snug">
                     <span className="truncate">{c.text}</span>
                   </PopoverTrigger>
-                  <button
-                    type="button"
-                    aria-label={`Delete ${c.text}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeChip(c);
-                    }}
-                    className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
-                  >
-                    <X size={16} />
-                  </button>
+                  {chipMenu(c)}
                 </div>
                 <PopoverContent
                   sideOffset={6}
@@ -793,10 +824,10 @@ export function TagField({
               </Popover>
             );
           }
-          // Non-raw chips are a joined [label][×] pill: the label
-          // is the Popover trigger for the chip editor (text /
-          // prefix / the #82 weight slider), and the
-          // trailing × deletes the chip in one tap (#80). The
+          // Non-raw chips are a joined [label][menu] pill: the
+          // label is the Popover trigger for the chip editor
+          // (text / the #82 weight slider), and the trailing
+          // segment opens the chip menu (#89). The
           // [−][+] weight step zones added in #34 were removed in
           // #83 — the editor's slider is the only weight control
           // now. Hand-rolled rather than shadcn's ButtonGroup:
@@ -834,17 +865,7 @@ export function TagField({
                     </span>
                   )}
                 </PopoverTrigger>
-                <button
-                  type="button"
-                  aria-label={`Delete ${c.text}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeChip(c);
-                  }}
-                  className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
-                >
-                  <X size={16} />
-                </button>
+                {chipMenu(c)}
               </div>
               <PopoverContent
                 sideOffset={6}
