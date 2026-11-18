@@ -166,6 +166,10 @@ export default function MainPage() {
   const [heroUrl, setHeroUrl] = useState("");
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [items, setItems] = useState<RecentItem[]>([]);
+  // Set once the first recent load settles; gates the empty
+  // state (improvement #72) so it only appears when outputs/ is
+  // genuinely empty, not while the list is still loading.
+  const [recentLoaded, setRecentLoaded] = useState(false);
   // Whole-outputs/ totals behind the recent list (improvement
   // #61): the Delete-Others confirmation counts from these, not
   // from the 30 shown items.
@@ -199,6 +203,8 @@ export default function MainPage() {
       setHeroUrl(list.length ? list[0].url : "");
     } catch {
       /* leave the viewer as-is */
+    } finally {
+      setRecentLoaded(true);
     }
   }, []);
 
@@ -699,7 +705,7 @@ export default function MainPage() {
   return (
     <>
       {subscription && <AllowanceBars subscription={subscription} />}
-      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(url, w, h) => setHeroSize({ url, w, h })} onDownloadClean={downloadCleanHero} onUseAsBaseImage={useHeroAsBaseImage} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
+      <Viewer heroUrl={heroUrl} status={status} busy={generating || upscaling || enhancing} items={items} recentLoaded={recentLoaded} onOpenForm={openModal} onSelect={selectThumb} onRestoreHero={restoreFromHero} onUpscale={() => setUpscaleOpen(true)} upscaling={upscaling} onEnhance={() => setEnhanceOpen(true)} enhancing={enhancing} onHeroLoad={(url, w, h) => setHeroSize({ url, w, h })} onDownloadClean={downloadCleanHero} onUseAsBaseImage={useHeroAsBaseImage} heroFavorite={heroFavorite} onToggleFavorite={toggleFavorite} othersCount={recentMeta.total - recentMeta.favoriteCount} favoritesCount={recentMeta.favoriteCount} onDeleteOthers={deleteOthers} deletingOthers={deletingOthers} />
       <FabRow generating={generating} onGenerate={generate} onOpenForm={openModal} />
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
