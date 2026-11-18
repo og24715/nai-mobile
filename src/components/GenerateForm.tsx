@@ -283,35 +283,44 @@ export function GenerateForm({ form }: { form: FormState }) {
 
             <div>
               <Label className={labelCls}>Size</Label>
-              {/* Size is a radio group of choice cards (improvement
-                  #86, the shadcn radio-group choice-card pattern):
-                  the dimensions are the card title, the orientation
-                  the description, and the selected card takes the
-                  primary border via has-data-checked on the label
-                  wrapping the item. The stored value is the same
-                  "832x1216" string the Select used to write. */}
+              {/* Size is a horizontal radio group of choice cards
+                  (improvements #86/#87, the shadcn radio-group
+                  choice-card pattern): three equal columns, each
+                  card stacking an aspect-ratio glyph, the
+                  orientation as title and the dimensions as the
+                  smaller description, with the item itself visually
+                  hidden inside the label card. The selected card
+                  takes the primary border via has-data-checked.
+                  The stored value is the same "832x1216" string
+                  the Select used to write. */}
               <RadioGroup
                 value={form.size}
                 onValueChange={(v) => {
                   if (typeof v === "string" && v) form.setSize(v);
                 }}
-                className="gap-3"
+                className="grid-cols-3 gap-2.5"
               >
                 {SIZES.map((s) => {
-                  const [title, rest] = s.label.split(" (");
-                  const desc = rest?.replace(/\)$/, "") ?? "";
+                  const [dims, rest] = s.label.split(" (");
+                  const orientation = rest?.replace(/\)$/, "") ?? "";
+                  const [w, h] = s.value.split("x");
                   return (
                     <label
                       key={s.value}
-                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border p-3.5 transition-colors has-data-checked:border-primary has-data-checked:bg-primary/5"
+                      className="group flex cursor-pointer flex-col items-center gap-1.5 rounded-lg border border-border p-3 text-center transition-colors has-data-checked:border-primary has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring"
                     >
-                      <span className="flex flex-1 flex-col">
-                        <span className="text-base font-medium">{title}</span>
-                        <span className="text-sm text-muted-foreground">
-                          {desc}
-                        </span>
+                      <span
+                        aria-hidden
+                        className="h-7 rounded-[4px] border-2 border-muted-foreground/50 group-has-data-checked:border-primary"
+                        style={{ aspectRatio: `${w} / ${h}` }}
+                      />
+                      <span className="text-sm leading-tight font-medium">
+                        {orientation}
                       </span>
-                      <RadioGroupItem value={s.value} />
+                      <span className="text-xs leading-tight text-muted-foreground">
+                        {dims}
+                      </span>
+                      <RadioGroupItem value={s.value} className="sr-only" />
                     </label>
                   );
                 })}
