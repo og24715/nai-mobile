@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Minus, Plus, Trash2, X } from "lucide-react";
+import { Check, Trash2, X } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,13 +69,14 @@ function fmtCount(n: number): string {
 // source#/target#/mutual# prefix selector. Raw chunks get only the
 // text row plus delete. Non-raw chips also get a weight slider
 // (improvement #82): range −3..+3 in 0.05 steps, applied live
-// through the same setChipWeight path as the chips' own [−][+]
-// step zones (#34) — exactly 1.0 unwraps to a plain tag, and a
-// tag inside a multi-tag section splits out at the new weight,
-// with the Popover following it. A weight outside the slider's
-// range shows its true value in the readout with the thumb
-// pinned at the nearest end; opening the editor never changes
-// the weight on its own.
+// through setChipWeight — exactly 1.0 unwraps to a plain tag,
+// and a tag inside a multi-tag section splits out at the new
+// weight, with the Popover following it. A weight outside the
+// slider's range shows its true value in the readout with the
+// thumb pinned at the nearest end; opening the editor never
+// changes the weight on its own. Since #83 the slider is the
+// only weight control: the chips' own [−][+] step zones (#34)
+// are gone.
 // Non-raw chips also get tag suggestions while editing (#60): the
 // same data as the add-tag input (fetchTagSuggestions, 250 ms
 // debounce, 2-char minimum, query on the part after any prefix),
@@ -308,11 +309,13 @@ function ChipEditorContent({
 // A prompt field edited ONLY through its tag chips (improvements #21,
 // #28): the chips plus an inline "add tag" input with the
 // suggestion combobox (#22, #54) are the whole editing UI — there is no
-// free-text textarea anymore. Weight stepping lives ON the chips
-// themselves (#34): each non-raw chip is a [−][label][+][×] button
-// group — the trailing × deletes the chip in one tap (#80), no
-// editor needed. Tapping a chip's label opens its editor Popover (#50) with
-// the text / prefix / delete controls. The field's string value
+// free-text textarea anymore. Each non-raw chip is a [label][×]
+// pill — the trailing × deletes the chip in one tap (#80), no
+// editor needed. Tapping a chip's label opens its editor Popover
+// (#50) with the text / prefix / delete controls and the weight
+// slider (#82); the [−][+] step zones the chips carried in #34
+// were removed in #83, leaving the slider as the only weight
+// control. The field's string value
 // remains the single source of truth: chips are derived from it on
 // every render, and every edit rewrites it through the same setter,
 // so persistence and generation payloads are untouched.
@@ -337,7 +340,7 @@ export function TagField({
   const chips = useMemo(() => listChips(segs), [segs]);
 
   // Which chip's editor Popover is open, if any (improvement #50).
-  // Local to the field; the stepper / text-edit follow logic below
+  // Local to the field; the weight / text-edit follow logic below
   // keeps it bound to the same tag when an edit splits a section
   // and indices shift.
   const [openChip, setOpenChip] = useState<{ seg: number; tag: number } | null>(
@@ -587,11 +590,11 @@ export function TagField({
     });
   };
 
-  // --- Chip weight edits (improvements #34 + #82) ---------------------
-  // Both weight controls go through setChipWeight and share this
-  // write + follow path: the −/+ zones on a chip step its weight
-  // (#34), and the editor Popover's slider sets it absolutely,
-  // live while dragging (#82). The open popover is only adjusted
+  // --- Chip weight edits (improvement #82) ---------------------------
+  // The editor Popover's slider is the only weight control (the
+  // chips' −/+ step zones from #34 were removed in #83). It sets
+  // the weight absolutely through setChipWeight, live while
+  // dragging, via this write + follow path. The open popover is only adjusted
   // when indices move: the edited chip itself is followed to its
   // (possibly split-out) position so its popover stays on it, and
   // an open chip pointing into/after a section that split is
@@ -614,12 +617,6 @@ export function TagField({
         setOpenChip({ seg: openChip.seg + 1, tag: openChip.tag });
       }
     }
-  };
-  const stepChip = (c: Chip, delta: number) => {
-    applyWeightResult(
-      c,
-      setChipWeight(segs, c.seg, c.tag, (c.weight ?? 1) + delta),
-    );
   };
   const applyWeight = (c: Chip, w: number) => {
     applyWeightResult(c, setChipWeight(segs, c.seg, c.tag, w));
@@ -648,7 +645,7 @@ export function TagField({
   // but the editor is not involved — it closes only when the
   // deleted chip was its own, and an editor open on a later chip
   // is shifted so it keeps pointing at the same tag (mirroring
-  // the stepper follow logic in stepChip). Deleting a tag from a
+  // the follow logic in applyWeightResult). Deleting a tag from a
   // multi-tag section shifts that section's later tags by one;
   // deleting a section's only chip removes the segment and shifts
   // later segments by one.
@@ -676,10 +673,11 @@ export function TagField({
   // Popover open-state routing for one chip. Base UI's dismissal
   // replaces the old hand-rolled outside-tap listener (#36), with
   // one exemption carried over from it: an outside press that lands
-  // on one of THIS field's chips is vetoed — a stepper tap must run
-  // the follow logic above (which may move or keep the selection),
-  // and a label tap on another chip opens that chip's popover
-  // instead; neither should be pre-empted by this popover closing.
+  // on one of THIS field's chips is vetoed — a × tap must run
+  // removeChip's follow logic above (which may shift or close the
+  // selection), and a label tap on another chip opens that chip's
+  // popover instead; neither should be pre-empted by this popover
+  // closing.
   // Presses anywhere else (including other fields' chips) close it.
   const handleOpenChange =
     (c: Chip) =>
@@ -800,15 +798,17 @@ export function TagField({
               </Popover>
             );
           }
-          // Non-raw chips are a joined [−][label][+][×] button group
-          // (improvement #34): the −/+ zones step the weight in
-          // place; the label between them is the Popover trigger for
-          // the chip editor (text / prefix / delete); the trailing
-          // × deletes the chip in one tap (#80). Hand-rolled
-          // rather than shadcn's ButtonGroup: that component styles
-          // each button's own border and corner radius, which fights
-          // this single-pill design (one container border, group-wide
-          // active/negative states, truncating label).
+          // Non-raw chips are a joined [label][×] pill: the label
+          // is the Popover trigger for the chip editor (text /
+          // prefix / delete / the #82 weight slider), and the
+          // trailing × deletes the chip in one tap (#80). The
+          // [−][+] weight step zones added in #34 were removed in
+          // #83 — the editor's slider is the only weight control
+          // now. Hand-rolled rather than shadcn's ButtonGroup:
+          // that component styles each button's own border and
+          // corner radius, which fights this single-pill design
+          // (one container border, group-wide active/negative
+          // states, truncating label).
           return (
             <Popover
               key={chipReactKeys.get(c)}
@@ -826,18 +826,7 @@ export function TagField({
                   active && "border-primary ring-1 ring-primary",
                 )}
               >
-                <button
-                  type="button"
-                  aria-label={`Decrease the weight of ${c.text}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepChip(c, -0.1);
-                  }}
-                  className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
-                >
-                  <Minus size={16} />
-                </button>
-                <PopoverTrigger className="flex min-w-0 touch-manipulation items-center gap-1.5 px-1.5 text-tag leading-snug">
+                <PopoverTrigger className="flex min-w-0 touch-manipulation items-center gap-1.5 px-3 text-tag leading-snug">
                   <span className="truncate">{c.text}</span>
                   {c.weight !== null && (
                     <span
@@ -850,17 +839,6 @@ export function TagField({
                     </span>
                   )}
                 </PopoverTrigger>
-                <button
-                  type="button"
-                  aria-label={`Increase the weight of ${c.text}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    stepChip(c, 0.1);
-                  }}
-                  className="flex w-stepper shrink-0 touch-manipulation items-center justify-center active:bg-accent"
-                >
-                  <Plus size={16} />
-                </button>
                 <button
                   type="button"
                   aria-label={`Delete ${c.text}`}
