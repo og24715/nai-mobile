@@ -23,7 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Slider } from "@/components/ui/slider";
+import { Button } from "@/components/ui/button";
 import {
   Combobox,
   ComboboxContent,
@@ -65,14 +65,17 @@ function fmtCount(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-// The weight editor (improvement #82, rehoused in #92): a
-// Popover holding ONLY the weight slider — range −3..+3 in 0.05
-// steps, applied live through setChipWeight; exactly 1.0 unwraps
-// to a plain tag, and a tag inside a multi-tag section splits
-// out at the new weight, with the Popover following it. A weight
-// outside the slider's range shows its true value in the readout
-// with the thumb pinned at the nearest end; opening the Popover
-// never changes the weight on its own. The Popover's trigger is
+// The weight editor (improvement #82, rehoused in #92, buttons
+// in #94): a Popover holding ONLY the weight control — the
+// current value as a readout and one row of fixed-step buttons
+// [−0.5] [−0.1] [1] [+0.1] [+0.5], the middle one resetting to
+// exactly 1.0. Every tap applies immediately through
+// setChipWeight; exactly 1.0 unwraps to a plain tag, and a tag
+// inside a multi-tag section splits out at the new weight, with
+// the Popover following it and staying open across taps. The
+// #82 slider this replaces was too fiddly to land on a value by
+// touch. Opening the Popover never changes the weight on its
+// own. The Popover's trigger is
 // the chip's weight badge, which every non-raw chip renders
 // since #92 (1 shown muted; the number carries no × prefix).
 // Text editing left the Popover in #92:
@@ -88,6 +91,7 @@ function ChipWeightContent({
 }) {
   // Plain tags carry no weight (null) and behave as 1.0.
   const weight = chip.weight ?? 1;
+  const stepBtn = "h-11 flex-1 tabular-nums";
   return (
     <div>
       <Label className="mb-1.5 block text-sm font-medium text-muted-foreground">
@@ -96,15 +100,53 @@ function ChipWeightContent({
           {fmtWeight(weight)}
         </span>
       </Label>
-      <Slider
-        className="px-2"
-        aria-label="Tag weight"
-        value={[Math.min(3, Math.max(-3, weight))]}
-        min={-3}
-        max={3}
-        step={0.05}
-        onValueChange={(v) => onSetWeight(Array.isArray(v) ? v[0] : v)}
-      />
+      <div className="flex gap-1.5">
+        <Button
+          type="button"
+          variant="outline"
+          className={stepBtn}
+          aria-label="Decrease weight by 0.5"
+          onClick={() => onSetWeight(weight - 0.5)}
+        >
+          −0.5
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className={stepBtn}
+          aria-label="Decrease weight by 0.1"
+          onClick={() => onSetWeight(weight - 0.1)}
+        >
+          −0.1
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          className={stepBtn}
+          aria-label="Reset weight to 1"
+          onClick={() => onSetWeight(1)}
+        >
+          1
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className={stepBtn}
+          aria-label="Increase weight by 0.1"
+          onClick={() => onSetWeight(weight + 0.1)}
+        >
+          +0.1
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className={stepBtn}
+          aria-label="Increase weight by 0.5"
+          onClick={() => onSetWeight(weight + 0.5)}
+        >
+          +0.5
+        </Button>
+      </div>
     </div>
   );
 }
@@ -120,8 +162,8 @@ function ChipWeightContent({
 // edits the text inline in the chip (#92; until then it opened
 // an editor Popover, #50), and the weight badge — shown on every
 // non-raw chip since #92 — opens the weight Popover holding
-// the #82 slider, still the only weight control (the [−][+]
-// step zones from #34 were removed in #83). The field's
+// the weight step buttons (#94; a slider in #82–#93, and the
+// [−][+] step zones from #34 were removed in #83). The field's
 // string value
 // remains the single source of truth: chips are derived from it on
 // every render, and every edit rewrites it through the same setter,
@@ -148,10 +190,10 @@ export function TagField({
 
   // Which chip's weight Popover is open, if any. Until #92 the
   // Popover held the whole chip editor; now it holds only the
-  // weight slider, and text editing is inline in the chip (the
-  // edit session below). Local to the field; the follow logic
-  // below keeps it bound to the same tag when an edit splits a
-  // section and indices shift.
+  // weight control (step buttons since #94), and text editing
+  // is inline in the chip (the edit session below). Local to
+  // the field; the follow logic below keeps it bound to the
+  // same tag when an edit splits a section and indices shift.
   const [weightChip, setWeightChip] = useState<{
     seg: number;
     tag: number;
@@ -507,10 +549,11 @@ export function TagField({
   };
 
   // --- Chip weight edits (improvement #82) ---------------------------
-  // The weight Popover's slider is the only weight control (the
-  // chips' −/+ step zones from #34 were removed in #83). It sets
-  // the weight absolutely through setChipWeight, live while
-  // dragging, via this write + follow path. A tracked chip (the
+  // The weight Popover's step buttons are the only weight control
+  // (the chips' −/+ step zones from #34 were removed in #83; the
+  // Popover held a slider in #82–#93, replaced by fixed-step
+  // buttons in #94). Each tap sets the weight absolutely through
+  // setChipWeight via this write + follow path. A tracked chip (the
   // weight Popover's anchor, or the inline edit session) is only
   // adjusted when indices move: the edited chip itself is
   // followed to its (possibly split-out) position so it stays
@@ -809,13 +852,12 @@ export function TagField({
   // text + occurrence, NOT by segment/tag coordinates. A weight
   // edit that splits a section renumbers the coordinates of the
   // chips in it; with coordinate keys the open weight Popover
-  // remounted on the split, killing the slider's drag after its
-  // first step. Text keys survive the renumbering (a split never
-  // changes the flattened chip order), so the Popover instance —
-  // and an in-progress drag — stays alive and keeps adjusting
-  // the same tag. (The data-chip-key attribute keeps the
-  // coordinates: activation #76 and the outside-press veto
-  // address chips by position.)
+  // remounted on the split, closing it after its first step.
+  // Text keys survive the renumbering (a split never changes
+  // the flattened chip order), so the Popover instance stays
+  // alive and keeps adjusting the same tag. (The data-chip-key
+  // attribute keeps the coordinates: activation #76 and the
+  // outside-press veto address chips by position.)
   const chipReactKeys = new Map<Chip, string>();
   {
     const seen = new Map<string, number>();
@@ -1022,8 +1064,8 @@ export function TagField({
             );
           }
           // Non-raw chips are a joined [badge][label][menu]
-          // pill: the badge opens the weight Popover (#82
-          // slider), the label tap edits the text inline (#92),
+          // pill: the badge opens the weight Popover (#94
+          // step buttons), the label tap edits the text inline (#92),
           // and the trailing segment opens the chip menu (#89).
           // Hand-rolled rather than shadcn's ButtonGroup: that
           // component styles each button's own border and corner
