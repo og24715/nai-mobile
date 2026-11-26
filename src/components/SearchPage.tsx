@@ -37,6 +37,16 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // keeps the responsive counts, a number pins that many columns at
 // every width. The choice persists in localStorage under
 // "nai.searchCols" (via usePersistedField, like the form fields).
+//
+// Improvement #100: a compact sticky header. Once the page is
+// scrolled past the form card (scrollY > 320px) a slim bar slides
+// in at the top with a back link, a compact search field bound to
+// the same input state, a favorites toggle and the result count,
+// so re-searching never needs a scroll back up. It carries no
+// border (per #97) — a soft shadow separates it from the results.
+// While hidden it is translated off-screen with pointer-events
+// off, visibility hidden and its controls removed from the tab
+// order, so nothing off-screen stays focusable.
 type ColsChoice = "auto" | "1" | "2" | "3" | "4" | "5" | "6";
 
 const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
@@ -74,6 +84,8 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
+  // Compact sticky header visibility (improvement #100).
+  const [showBar, setShowBar] = useState(false);
   // Column-count choice, persisted under "nai.searchCols". A stored
   // value outside the known choices (older build, hand-edited
   // storage) falls back to "auto" instead of breaking the grid.
@@ -97,6 +109,14 @@ export default function SearchPage() {
   useEffect(() => {
     void runSearch("", false);
   }, [runSearch]);
+
+  // Show the compact header once the form card is scrolled past.
+  useEffect(() => {
+    const onScroll = () => setShowBar(window.scrollY > 320);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const submit = () => {
     setQuery(input);
@@ -123,6 +143,69 @@ export default function SearchPage() {
 
   return (
     <main className="min-h-screen bg-[#faf7f2] text-stone-900">
+      <div
+        aria-label="Compact search header"
+        aria-hidden={!showBar}
+        className={`fixed inset-x-0 top-0 z-40 bg-[#faf7f2]/95 shadow-sm backdrop-blur transition-all duration-200 ${
+          showBar
+            ? "translate-y-0"
+            : "invisible -translate-y-full pointer-events-none"
+        }`}
+      >
+        <div className="mx-auto flex w-full max-w-[1200px] items-center gap-3 px-5 py-3 sm:px-8">
+          <a
+            href="./"
+            tabIndex={showBar ? undefined : -1}
+            className="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-stone-100 px-3 text-sm text-blue-600 no-underline hover:bg-stone-200"
+          >
+            <span aria-hidden="true">←</span>
+            <span className="hidden sm:inline">Generate</span>
+          </a>
+          <div className="flex min-w-0 flex-1 gap-2">
+            <Input
+              type="search"
+              autoComplete="off"
+              placeholder="e.g. 1girl solo, or a seed"
+              tabIndex={showBar ? undefined : -1}
+              className="h-11 min-w-0 flex-1 border-transparent bg-white text-base text-stone-900 placeholder:text-stone-400 dark:bg-white dark:text-stone-900"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+            />
+            <Button
+              type="button"
+              onClick={submit}
+              tabIndex={showBar ? undefined : -1}
+              aria-label="Search"
+              className="h-11 min-w-11 shrink-0 rounded-lg bg-blue-600 px-3 text-white hover:bg-blue-700"
+            >
+              <Search className="h-5 w-5" />
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={toggleFavorites}
+            tabIndex={showBar ? undefined : -1}
+            aria-label="Favorites only"
+            aria-pressed={favoritesOnly}
+            className={
+              favoritesOnly
+                ? "h-11 min-w-11 shrink-0 rounded-lg bg-blue-600 px-3 text-white hover:bg-blue-700"
+                : "h-11 min-w-11 shrink-0 rounded-lg bg-stone-100 px-3 text-stone-700 hover:bg-stone-200"
+            }
+          >
+            <Heart className={favoritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} />
+          </Button>
+          {searched && (
+            <span className="hidden shrink-0 text-sm text-stone-500 sm:block">
+              {total} {total === 1 ? "result" : "results"}
+            </span>
+          )}
+        </div>
+      </div>
       <div className="mx-auto w-full max-w-[1200px] px-5 pt-14 pb-24 sm:px-8">
         <header>
           <h1 className="mb-3 text-2xl font-bold">Search Images</h1>
