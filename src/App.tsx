@@ -1,4 +1,5 @@
 import MainPage from "@/components/MainPage";
+import SearchPage from "@/components/SearchPage";
 import SetupPage from "@/components/SetupPage";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -11,9 +12,10 @@ import { Toaster } from "@/components/ui/sonner";
 export default function App() {
   const p = window.location.pathname;
   const isSetup = p.endsWith("/setup") || p.endsWith("/setup/");
+  const isSearch = p.endsWith("/search") || p.endsWith("/search/");
   return (
     <>
-      {isSetup ? <SetupPage /> : <MainPage />}
+      {isSetup ? <SetupPage /> : isSearch ? <SearchPage /> : <MainPage />}
       <Toaster position="top-center" duration={6000} />
     </>
   );

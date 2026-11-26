@@ -483,6 +483,63 @@ function pngSize(
   }
 }
 
+// --- Search index (improvement #95) ------------------------------------
+// Full-text search over outputs/*.png for the /search page. Each entry
+// carries the normalized searchable text (main prompt, UC, and every
+// character caption, via promptStringsFromComment), the seed, and the
+// model from the PNG Source text chunk. Cached in memory keyed by
+// outputsSignature() like the personal-tags counts; rebuilt when the
+// outputs directory changes. Favorite state is NOT cached here -- it
+// lives in its own store and is applied per request.
+interface SearchEntry {
+  name: string;
+  mtime: number;
+  size: number;
+  text: string;
+  seed: number | null;
+  model: string | null;
+}
+let searchState: { sig: string; entries: SearchEntry[] } | null = null;
+
+function loadSearchIndex(): SearchEntry[] {
+  const sig = outputsSignature();
+  if (searchState && searchState.sig === sig) return searchState.entries;
+  const entries: SearchEntry[] = [];
+  for (const name of outputPngNames()) {
+    try {
+      const st = fs.statSync(path.join(OUTPUTS, name));
+      const texts = extractPngText(fs.readFileSync(path.join(OUTPUTS, name)));
+      let text = "";
+      let seed: number | null = null;
+      const comment = texts?.get("Comment");
+      if (comment) {
+        try {
+          const parsed = JSON.parse(comment) as Record<string, unknown>;
+          text = normalizeTagKey(promptStringsFromComment(parsed).join(", "));
+          if (typeof parsed.seed === "number" && Number.isFinite(parsed.seed)) {
+            seed = parsed.seed;
+          }
+        } catch {
+          /* unparsable Comment */
+        }
+      }
+      entries.push({
+        name,
+        mtime: st.mtimeMs,
+        size: st.size,
+        text,
+        seed,
+        model: texts?.get("Source") || null,
+      });
+    } catch {
+      /* skip an unreadable PNG */
+    }
+  }
+  entries.sort((a, b) => b.mtime - a.mtime);
+  searchState = { sig, entries };
+  return entries;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url || "/", "http://localhost");
@@ -525,6 +582,35 @@ const server = http.createServer(async (req, res) => {
           return { name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name), ...(dims ? { width: dims.width, height: dims.height } : {}) };
         });
       sendJson(res, 200, { ok: true, items, total: all.length, favoriteCount: favs.size }); return;
+    }
+    if (req.method === "GET" && p === "api/search") {
+      // Image search (improvement #95): every whitespace/comma-separated
+      // term must match -- as a normalized substring of the prompt / UC /
+      // character text, or, for an all-digits term, as an exact seed.
+      // Empty q matches everything. No token: same unauthenticated
+      // local read as /api/recent.
+      const q = url.searchParams.get("q") || "";
+      const favoritesOnly = url.searchParams.get("favorites") === "1";
+      const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+      const limit = Math.min(120, Math.max(1, Number(url.searchParams.get("limit")) || 60));
+      const terms = q.split(/[\s,]+/).filter(Boolean).map((t) => ({
+        raw: t,
+        key: normalizeTagKey(t),
+        digits: /^\d+$/.test(t),
+      }));
+      const favs = new Set(readFavorites());
+      const matched = loadSearchIndex().filter((e) => {
+        if (favoritesOnly && !favs.has(e.name)) return false;
+        return terms.every((t) => {
+          if (t.digits && e.seed !== null && e.seed === Number(t.raw)) return true;
+          return t.key !== "" && e.text.includes(t.key);
+        });
+      });
+      const items = matched.slice(offset, offset + limit).map((x) => {
+        const dims = pngSize(x.name, x.mtime, x.size);
+        return { name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name), seed: x.seed, model: x.model, ...(dims ? { width: dims.width, height: dims.height } : {}) };
+      });
+      sendJson(res, 200, { ok: true, items, total: matched.length }); return;
     }
     if (req.method === "GET" && p === "api/subscription") {
       // Same relay pattern as generate: the browser's token arrives as

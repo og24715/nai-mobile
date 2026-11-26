@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Heart } from "lucide-react";
+import { Heart, Search } from "lucide-react";
 import AutoHeight from "embla-carousel-auto-height";
 import type { RecentItem } from "@/lib/api";
 import {
@@ -12,7 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Carousel,
   CarouselContent,
@@ -275,6 +275,14 @@ export function Viewer({ heroUrl, status, busy, items, formSize, onSelect, onRes
         <section className="mb-14">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-xl font-semibold">Recent</h2>
+            <div className="flex items-center gap-1">
+              <a
+                href="search"
+                className={buttonVariants({ variant: "ghost", size: "sm" })}
+              >
+                <Search />
+                Search
+              </a>
             <Button
               variant="ghost"
               size="sm"
@@ -283,6 +291,7 @@ export function Viewer({ heroUrl, status, busy, items, formSize, onSelect, onRes
             >
               Delete Others
             </Button>
+            </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {items.map((it) => (

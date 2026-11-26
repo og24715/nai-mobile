@@ -357,3 +357,36 @@ export async function requestEnhance(
   });
   return { status: r.status, json: (await r.json()) as EnhanceResponse };
 }
+
+export interface SearchItem {
+  name: string;
+  url: string;
+  favorite: boolean;
+  seed: number | null;
+  model: string | null;
+  width?: number;
+  height?: number;
+}
+
+export interface SearchList {
+  items: SearchItem[];
+  total: number;
+}
+
+export async function fetchSearch(
+  q: string,
+  favoritesOnly: boolean,
+  offset: number,
+  limit = 60,
+): Promise<SearchList> {
+  const params = new URLSearchParams({
+    q,
+    favorites: favoritesOnly ? "1" : "0",
+    offset: String(offset),
+    limit: String(limit),
+  });
+  const r = await fetch(`api/search?${params.toString()}`);
+  const j = await r.json();
+  const items = Array.isArray(j.items) ? (j.items as SearchItem[]) : [];
+  return { items, total: typeof j.total === "number" ? j.total : items.length };
+}
