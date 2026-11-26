@@ -3,7 +3,7 @@ import { Heart, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { usePersistedField } from "@/hooks/usePersistedField";
 import { fetchSearch, type SearchItem } from "@/lib/api";
 
 // Search page (/search, improvement #95): full-text search over every
@@ -21,15 +21,48 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // Fixes (improvement #97): no static element on this page renders a
 // border at all — not even a neutral one. Elements that sat on the
 // white card (input, plain buttons, back link) are set apart by a
-// stone-100 background instead. The only "border" utilities left
-// below are border-transparent overrides, which render nothing and
-// exist solely to cancel the border color the ui Input paints by
+// stone-100 background instead. The only "border" utility left
+// below is a border-transparent override, which renders nothing and
+// exists solely to cancel the border color the ui Input paints by
 // default (the ui Button's base style is already border-transparent).
 // The ui components' focus-visible outlines/rings are left exactly
 // as they are, for accessibility. The results also moved from CSS
 // columns (which filled vertically, scrambling the reading order)
 // to a responsive grid, so items read strictly left-to-right,
 // top-to-bottom in API order, Load-more appends included.
+//
+// Improvement #98: the theme toggle is gone from this page (the
+// page has its own fixed Dash theme, so switching was meaningless),
+// and the results grid's column count is now selectable: "Auto"
+// keeps the responsive counts, a number pins that many columns at
+// every width. The choice persists in localStorage under
+// "nai.searchCols" (via usePersistedField, like the form fields).
+type ColsChoice = "auto" | "2" | "3" | "4" | "5" | "6";
+
+const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
+  { value: "auto", label: "Auto" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3" },
+  { value: "4", label: "4" },
+  { value: "5", label: "5" },
+  { value: "6", label: "6" },
+];
+
+// Complete literal class strings per choice, so Tailwind's scanner
+// sees every grid-cols-* utility; never interpolate fragments.
+const GRID_COLS: Record<ColsChoice, string> = {
+  auto: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
+  "2": "grid-cols-2",
+  "3": "grid-cols-3",
+  "4": "grid-cols-4",
+  "5": "grid-cols-5",
+  "6": "grid-cols-6",
+};
+
+function isColsChoice(v: string): v is ColsChoice {
+  return COLS_OPTIONS.some((o) => o.value === v);
+}
+
 export default function SearchPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -39,6 +72,11 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
+  // Column-count choice, persisted under "nai.searchCols". A stored
+  // value outside the known choices (older build, hand-edited
+  // storage) falls back to "auto" instead of breaking the grid.
+  const [colsStored, setColsStored] = usePersistedField("searchCols", "auto");
+  const cols: ColsChoice = isColsChoice(colsStored) ? colsStored : "auto";
 
   const runSearch = useCallback(async (q: string, fav: boolean) => {
     setLoading(true);
@@ -128,18 +166,34 @@ export default function SearchPage() {
               <Heart className={favoritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} />
               Favorites only
             </Button>
-            {/* [&_button]:border-transparent cancels the resting
-                border the shared ThemeToggle paints, on this page
-                only; its focus-visible ring has higher specificity
-                and is unaffected. */}
-            <div className="mt-6 flex items-center gap-3 [&_button]:border-transparent">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <span className="text-sm text-stone-500">Columns</span>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Columns">
+                {COLS_OPTIONS.map((o) => (
+                  <Button
+                    key={o.value}
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setColsStored(o.value)}
+                    aria-pressed={cols === o.value}
+                    className={
+                      cols === o.value
+                        ? "h-11 min-w-11 rounded-lg bg-blue-600 px-3.5 text-white hover:bg-blue-700"
+                        : "h-11 min-w-11 rounded-lg bg-stone-100 px-3.5 text-stone-700 hover:bg-stone-200"
+                    }
+                  >
+                    {o.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-6 flex items-center gap-3">
               <a
                 href="./"
                 className="inline-block rounded-lg bg-stone-100 px-3.5 py-1.5 text-sm text-blue-600 no-underline hover:bg-stone-200"
               >
                 ← Back to Generate
               </a>
-              <ThemeToggle />
             </div>
           </div>
         </section>
@@ -154,7 +208,7 @@ export default function SearchPage() {
           {searched && !loading && items.length === 0 && (
             <p className="text-stone-500">No images matched.</p>
           )}
-          <div className="mt-4 grid grid-cols-2 items-start gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className={`mt-4 grid items-start gap-5 ${GRID_COLS[cols]}`}>
             {items.map((it) => (
               <a
                 key={it.name}
