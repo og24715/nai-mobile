@@ -11,6 +11,17 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // the PNG prompt metadata (prompt / UC / character captions) or, for
 // an all-digits term, exactly against the seed. Tapping a thumbnail
 // opens the original in a new tab, like the main viewer.
+//
+// Restyle (improvement #96): the results are a responsive CSS-columns
+// masonry (2 columns on phones, up to 5 on wide screens), and the
+// page carries its own Muse Dash theme — warm ivory background,
+// white surfaces, restrained radius, a blue accent used only as
+// text color and as the filled Search action — scoped to this page
+// through explicit classes, so it looks the same under the app's
+// light and dark modes. Every resting border on the page is a
+// neutral stone hairline; no accent color is ever used as a border
+// color. The ui components' focus-visible outlines/rings are left
+// exactly as they are, for accessibility.
 export default function SearchPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -63,111 +74,116 @@ export default function SearchPage() {
   };
 
   return (
-    <main className="mx-auto max-w-[640px] px-5 pt-14 pb-24">
-      <header>
-        <h1 className="mb-3 text-2xl font-bold">Search Images</h1>
-        <p className="text-muted-foreground">
-          Search all generated images by prompt tags, or by seed number
-        </p>
-      </header>
+    <main className="min-h-screen bg-[#faf7f2] text-stone-900">
+      <div className="mx-auto w-full max-w-[1200px] px-5 pt-14 pb-24 sm:px-8">
+        <header>
+          <h1 className="mb-3 text-2xl font-bold">Search Images</h1>
+          <p className="text-stone-500">
+            Search all generated images by prompt tags, or by seed number
+          </p>
+        </header>
 
-      <section className="mb-14">
-        <div className="mt-6 rounded-[20px] border border-border bg-card px-6 py-7">
-          <div className="flex gap-3">
-            <Input
-              type="search"
-              autoComplete="off"
-              placeholder="e.g. 1girl solo, or a seed"
-              className="h-[52px] flex-1 text-base"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submit();
-              }}
-            />
+        <section className="mb-14">
+          <div className="mt-6 rounded-xl border border-stone-200 bg-white px-6 py-7">
+            <div className="flex gap-3">
+              <Input
+                type="search"
+                autoComplete="off"
+                placeholder="e.g. 1girl solo, or a seed"
+                className="h-[52px] flex-1 border-stone-300 bg-white text-base text-stone-900 placeholder:text-stone-400 dark:bg-white dark:text-stone-900"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") submit();
+                }}
+              />
+              <Button
+                type="button"
+                onClick={submit}
+                className="h-[52px] min-w-[52px] rounded-lg border border-transparent bg-blue-600 px-5 text-base text-white hover:bg-blue-700"
+              >
+                <Search className="h-5 w-5" />
+                Search
+              </Button>
+            </div>
             <Button
               type="button"
               variant="secondary"
-              onClick={submit}
-              className="h-[52px] min-w-[52px] rounded-full border border-border px-5 text-base"
+              onClick={toggleFavorites}
+              aria-pressed={favoritesOnly}
+              className={
+                favoritesOnly
+                  ? "mt-4 h-11 rounded-lg border border-transparent bg-blue-600 px-5 text-white hover:bg-blue-700"
+                  : "mt-4 h-11 rounded-lg border border-stone-300 bg-white px-5 text-stone-700 hover:bg-stone-100"
+              }
             >
-              <Search className="h-5 w-5" />
-              Search
+              <Heart className={favoritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} />
+              Favorites only
             </Button>
+            <div className="mt-6 flex items-center gap-3">
+              <a
+                href="./"
+                className="inline-block rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm text-blue-600 no-underline hover:bg-stone-100"
+              >
+                ← Back to Generate
+              </a>
+              <ThemeToggle />
+            </div>
           </div>
-          <Button
-            type="button"
-            variant={favoritesOnly ? "default" : "secondary"}
-            onClick={toggleFavorites}
-            className="mt-4 h-11 rounded-full border border-border px-5"
-            aria-pressed={favoritesOnly}
-          >
-            <Heart className={favoritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} />
-            Favorites only
-          </Button>
-          <div className="mt-6 flex items-center gap-3">
-            <a
-              href="./"
-              className="inline-block rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-muted-foreground no-underline"
-            >
-              ← Back to Generate
-            </a>
-            <ThemeToggle />
-          </div>
-        </div>
-      </section>
+        </section>
 
-      <section>
-        <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-xl font-semibold">
-            {searched ? `${total} ${total === 1 ? "result" : "results"}` : "Results"}
-          </h2>
-          {loading && <Spinner className="shrink-0" />}
-        </div>
-        {searched && !loading && items.length === 0 && (
-          <p className="text-muted-foreground">No images matched.</p>
-        )}
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          {items.map((it) => (
-            <a
-              key={it.name}
-              href={it.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="relative block"
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="text-xl font-semibold">
+              {searched ? `${total} ${total === 1 ? "result" : "results"}` : "Results"}
+            </h2>
+            {loading && <Spinner className="shrink-0" />}
+          </div>
+          {searched && !loading && items.length === 0 && (
+            <p className="text-stone-500">No images matched.</p>
+          )}
+          <div className="mt-4 columns-2 gap-5 sm:columns-3 lg:columns-4 xl:columns-5">
+            {items.map((it) => (
+              <a
+                key={it.name}
+                href={it.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative mb-5 block break-inside-avoid"
+              >
+                <img
+                  src={it.url}
+                  loading="lazy"
+                  alt=""
+                  width={it.width}
+                  height={it.height}
+                  style={{
+                    aspectRatio:
+                      it.width && it.height ? `${it.width} / ${it.height}` : undefined,
+                  }}
+                  className="block h-auto w-full rounded-lg border border-stone-200"
+                />
+                {it.favorite && (
+                  <span className="absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-white">
+                    <Heart className="size-3.5 fill-current" />
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+          {items.length > 0 && items.length < total && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="mt-8 h-[52px] w-full rounded-lg border border-stone-300 bg-white text-base text-stone-900 hover:bg-stone-100"
             >
-              <img
-                src={it.url}
-                loading="lazy"
-                alt=""
-                width={it.width}
-                height={it.height}
-                style={{
-                  aspectRatio:
-                    it.width && it.height ? `${it.width} / ${it.height}` : undefined,
-                }}
-                className="block h-auto w-full rounded-xl"
-              />
-              {it.favorite && (
-                <span className="absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-primary">
-                  <Heart className="size-3.5 fill-current" />
-                </span>
-              )}
-            </a>
-          ))}
-        </div>
-        {items.length > 0 && items.length < total && (
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void loadMore()}
-            disabled={loadingMore}
-            className="mt-8 h-[52px] w-full rounded-full border border-border text-base"
-          >
-            {loadingMore ? "Loading..." : `Load more (${total - items.length} remaining)`}
-          </Button>
-        )}
-      </section>
+              {loadingMore ? "Loading..." : `Load more (${total - items.length} remaining)`}
+            </Button>
+          )}
+        </section>
+      </div>
     </main>
   );
 }
