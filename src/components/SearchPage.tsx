@@ -12,16 +12,24 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // an all-digits term, exactly against the seed. Tapping a thumbnail
 // opens the original in a new tab, like the main viewer.
 //
-// Restyle (improvement #96): the results are a responsive CSS-columns
-// masonry (2 columns on phones, up to 5 on wide screens), and the
-// page carries its own Muse Dash theme — warm ivory background,
-// white surfaces, restrained radius, a blue accent used only as
-// text color and as the filled Search action — scoped to this page
-// through explicit classes, so it looks the same under the app's
-// light and dark modes. Every resting border on the page is a
-// neutral stone hairline; no accent color is ever used as a border
-// color. The ui components' focus-visible outlines/rings are left
-// exactly as they are, for accessibility.
+// Restyle (improvement #96): the page carries its own Muse Dash
+// theme — warm ivory background, white surfaces, restrained radius,
+// a blue accent used only as text color and as the filled Search
+// action — scoped to this page through explicit classes, so it
+// looks the same under the app's light and dark modes.
+//
+// Fixes (improvement #97): no static element on this page renders a
+// border at all — not even a neutral one. Elements that sat on the
+// white card (input, plain buttons, back link) are set apart by a
+// stone-100 background instead. The only "border" utilities left
+// below are border-transparent overrides, which render nothing and
+// exist solely to cancel the border color the ui Input paints by
+// default (the ui Button's base style is already border-transparent).
+// The ui components' focus-visible outlines/rings are left exactly
+// as they are, for accessibility. The results also moved from CSS
+// columns (which filled vertically, scrambling the reading order)
+// to a responsive grid, so items read strictly left-to-right,
+// top-to-bottom in API order, Load-more appends included.
 export default function SearchPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -84,13 +92,13 @@ export default function SearchPage() {
         </header>
 
         <section className="mb-14">
-          <div className="mt-6 rounded-xl border border-stone-200 bg-white px-6 py-7">
+          <div className="mt-6 rounded-xl bg-white px-6 py-7">
             <div className="flex gap-3">
               <Input
                 type="search"
                 autoComplete="off"
                 placeholder="e.g. 1girl solo, or a seed"
-                className="h-[52px] flex-1 border-stone-300 bg-white text-base text-stone-900 placeholder:text-stone-400 dark:bg-white dark:text-stone-900"
+                className="h-[52px] flex-1 border-transparent bg-stone-100 text-base text-stone-900 placeholder:text-stone-400 dark:bg-stone-100 dark:text-stone-900"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -100,7 +108,7 @@ export default function SearchPage() {
               <Button
                 type="button"
                 onClick={submit}
-                className="h-[52px] min-w-[52px] rounded-lg border border-transparent bg-blue-600 px-5 text-base text-white hover:bg-blue-700"
+                className="h-[52px] min-w-[52px] rounded-lg bg-blue-600 px-5 text-base text-white hover:bg-blue-700"
               >
                 <Search className="h-5 w-5" />
                 Search
@@ -113,17 +121,21 @@ export default function SearchPage() {
               aria-pressed={favoritesOnly}
               className={
                 favoritesOnly
-                  ? "mt-4 h-11 rounded-lg border border-transparent bg-blue-600 px-5 text-white hover:bg-blue-700"
-                  : "mt-4 h-11 rounded-lg border border-stone-300 bg-white px-5 text-stone-700 hover:bg-stone-100"
+                  ? "mt-4 h-11 rounded-lg bg-blue-600 px-5 text-white hover:bg-blue-700"
+                  : "mt-4 h-11 rounded-lg bg-stone-100 px-5 text-stone-700 hover:bg-stone-200"
               }
             >
               <Heart className={favoritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} />
               Favorites only
             </Button>
-            <div className="mt-6 flex items-center gap-3">
+            {/* [&_button]:border-transparent cancels the resting
+                border the shared ThemeToggle paints, on this page
+                only; its focus-visible ring has higher specificity
+                and is unaffected. */}
+            <div className="mt-6 flex items-center gap-3 [&_button]:border-transparent">
               <a
                 href="./"
-                className="inline-block rounded-lg border border-stone-300 bg-white px-3.5 py-1.5 text-sm text-blue-600 no-underline hover:bg-stone-100"
+                className="inline-block rounded-lg bg-stone-100 px-3.5 py-1.5 text-sm text-blue-600 no-underline hover:bg-stone-200"
               >
                 ← Back to Generate
               </a>
@@ -142,14 +154,14 @@ export default function SearchPage() {
           {searched && !loading && items.length === 0 && (
             <p className="text-stone-500">No images matched.</p>
           )}
-          <div className="mt-4 columns-2 gap-5 sm:columns-3 lg:columns-4 xl:columns-5">
+          <div className="mt-4 grid grid-cols-2 items-start gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {items.map((it) => (
               <a
                 key={it.name}
                 href={it.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="relative mb-5 block break-inside-avoid"
+                className="relative block"
               >
                 <img
                   src={it.url}
@@ -161,7 +173,7 @@ export default function SearchPage() {
                     aspectRatio:
                       it.width && it.height ? `${it.width} / ${it.height}` : undefined,
                   }}
-                  className="block h-auto w-full rounded-lg border border-stone-200"
+                  className="block h-auto w-full rounded-lg"
                 />
                 {it.favorite && (
                   <span className="absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-white">
@@ -177,7 +189,7 @@ export default function SearchPage() {
               variant="secondary"
               onClick={() => void loadMore()}
               disabled={loadingMore}
-              className="mt-8 h-[52px] w-full rounded-lg border border-stone-300 bg-white text-base text-stone-900 hover:bg-stone-100"
+              className="mt-8 h-[52px] w-full rounded-lg bg-stone-100 text-base text-stone-900 hover:bg-stone-200"
             >
               {loadingMore ? "Loading..." : `Load more (${total - items.length} remaining)`}
             </Button>
