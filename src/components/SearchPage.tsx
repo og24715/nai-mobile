@@ -37,10 +37,11 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // keeps the responsive counts, a number pins that many columns at
 // every width. The choice persists in localStorage under
 // "nai.searchCols" (via usePersistedField, like the form fields).
-type ColsChoice = "auto" | "2" | "3" | "4" | "5" | "6";
+type ColsChoice = "auto" | "1" | "2" | "3" | "4" | "5" | "6";
 
 const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
   { value: "auto", label: "Auto" },
+  { value: "1", label: "1" },
   { value: "2", label: "2" },
   { value: "3", label: "3" },
   { value: "4", label: "4" },
@@ -52,6 +53,7 @@ const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
 // sees every grid-cols-* utility; never interpolate fragments.
 const GRID_COLS: Record<ColsChoice, string> = {
   auto: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5",
+  "1": "grid-cols-1",
   "2": "grid-cols-2",
   "3": "grid-cols-3",
   "4": "grid-cols-4",
