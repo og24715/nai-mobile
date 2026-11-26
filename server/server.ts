@@ -27,6 +27,7 @@ const UA = "Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144
 const DATA_DIR = path.join(ROOT, "data");
 const PERSONAL_CACHE_FILE = path.join(DATA_DIR, "personal-tags.json");
 const FAVORITES_FILE = path.join(DATA_DIR, "favorites.json");
+const SEARCH_CACHE_FILE = path.join(DATA_DIR, "search-index.json");
 
 fs.mkdirSync(OUTPUTS, { recursive: true });
 
@@ -483,61 +484,223 @@ function pngSize(
   }
 }
 
-// --- Search index (improvement #95) ------------------------------------
-// Full-text search over outputs/*.png for the /search page. Each entry
+// --- Search index (improvements #95 + #101) ----------------------------
+// Full-text search over outputs/*.png for the /search page. Each record
 // carries the normalized searchable text (main prompt, UC, and every
 // character caption, via promptStringsFromComment), the seed, and the
-// model from the PNG Source text chunk. Cached in memory keyed by
-// outputsSignature() like the personal-tags counts; rebuilt when the
-// outputs directory changes. Favorite state is NOT cached here -- it
-// lives in its own store and is applied per request.
-interface SearchEntry {
-  name: string;
-  mtime: number;
+// model from the PNG Source text chunk. Favorite state is NOT cached
+// here -- it lives in its own store and is applied per request.
+//
+// #101: outputs/ grew to ~37k files (imported phone generations), and
+// the #95 design -- an in-memory index rebuilt from scratch whenever
+// outputsSignature() changed -- took ~50s per rebuild, so the first
+// search after any new generation (or a server restart) stalled. The
+// index is now persistent and incremental: records are stored in
+// data/search-index.json keyed by filename with the file's mtime/size,
+// each refresh stats the directory and parses ONLY files that are new
+// or changed, drops records whose files were deleted, and reuses the
+// stored record for everything else. Parsing itself reads only the
+// PNG's head chunks (extractPngTextHead) instead of the whole file.
+interface SearchRecord {
+  mtimeMs: number;
   size: number;
   text: string;
   seed: number | null;
   model: string | null;
+  width?: number;
+  height?: number;
 }
-let searchState: { sig: string; entries: SearchEntry[] } | null = null;
+interface SearchEntry extends SearchRecord {
+  name: string;
+}
+let searchRecords: Map<string, SearchRecord> | null = null;
+// In-flight refresh shared by concurrent /api/search requests, so a
+// burst of searches triggers one directory scan, not one per request.
+let searchRefresh: Promise<SearchEntry[]> | null = null;
 
-function loadSearchIndex(): SearchEntry[] {
-  const sig = outputsSignature();
-  if (searchState && searchState.sig === sig) return searchState.entries;
-  const entries: SearchEntry[] = [];
-  for (const name of outputPngNames()) {
-    try {
-      const st = fs.statSync(path.join(OUTPUTS, name));
-      const texts = extractPngText(fs.readFileSync(path.join(OUTPUTS, name)));
-      let text = "";
-      let seed: number | null = null;
-      const comment = texts?.get("Comment");
-      if (comment) {
-        try {
-          const parsed = JSON.parse(comment) as Record<string, unknown>;
-          text = normalizeTagKey(promptStringsFromComment(parsed).join(", "));
-          if (typeof parsed.seed === "number" && Number.isFinite(parsed.seed)) {
-            seed = parsed.seed;
+// Head-limited variant of extractPngText for the search index: walks
+// the file's chunks from the start, reading only chunk headers plus
+// tEXt payloads, and stops as soon as an IDAT chunk begins once both
+// "Comment" and "Source" have been collected (NovelAI writes all of
+// its tEXt chunks before IDAT). If IDAT arrives before both are found,
+// the walk continues (skipping non-tEXt payloads without reading them)
+// exactly like extractPngText, so no text chunk is ever missed.
+// Returns null for a non-PNG / unreadable file, like extractPngText.
+function extractPngTextHead(file: string): Map<string, string> | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, "r");
+  } catch {
+    return null;
+  }
+  try {
+    const sig = Buffer.alloc(8);
+    if (
+      fs.readSync(fd, sig, 0, 8, 0) < 8 ||
+      sig[0] !== 0x89 ||
+      sig[1] !== 0x50 ||
+      sig[2] !== 0x4e ||
+      sig[3] !== 0x47
+    ) {
+      return null;
+    }
+    const out = new Map<string, string>();
+    const header = Buffer.alloc(8);
+    let pos = 8;
+    for (;;) {
+      if (fs.readSync(fd, header, 0, 8, pos) < 8) break;
+      const len = header.readUInt32BE(0);
+      const type = header.toString("latin1", 4, 8);
+      if (type === "IDAT" && out.has("Comment") && out.has("Source")) break;
+      if (type === "tEXt") {
+        const data = Buffer.alloc(len);
+        if (fs.readSync(fd, data, 0, len, pos + 8) < len) break;
+        const nul = data.indexOf(0);
+        if (nul > 0) {
+          const key = data.toString("latin1", 0, nul);
+          if (!out.has(key)) {
+            out.set(key, data.toString("utf8", nul + 1));
           }
-        } catch {
-          /* unparsable Comment */
         }
       }
-      entries.push({
-        name,
-        mtime: st.mtimeMs,
-        size: st.size,
-        text,
-        seed,
-        model: texts?.get("Source") || null,
-      });
+      if (type === "IEND") break;
+      pos += 8 + len + 4;
+    }
+    return out;
+  } catch {
+    return null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function buildSearchRecord(name: string, st: fs.Stats): SearchRecord {
+  const texts = extractPngTextHead(path.join(OUTPUTS, name));
+  let text = "";
+  let seed: number | null = null;
+  const comment = texts?.get("Comment");
+  if (comment) {
+    try {
+      const parsed = JSON.parse(comment) as Record<string, unknown>;
+      text = normalizeTagKey(promptStringsFromComment(parsed).join(", "));
+      if (typeof parsed.seed === "number" && Number.isFinite(parsed.seed)) {
+        seed = parsed.seed;
+      }
+    } catch {
+      /* unparsable Comment */
+    }
+  }
+  const dims = pngSize(name, st.mtimeMs, st.size);
+  return {
+    mtimeMs: st.mtimeMs,
+    size: st.size,
+    text,
+    seed,
+    model: texts?.get("Source") || null,
+    ...(dims ? { width: dims.width, height: dims.height } : {}),
+  };
+}
+
+// The on-disk records, loaded once per process. A missing / corrupt
+// file just means every file parses fresh on the first refresh.
+function loadSearchRecords(): Map<string, SearchRecord> {
+  if (searchRecords) return searchRecords;
+  const map = new Map<string, SearchRecord>();
+  try {
+    const j = JSON.parse(fs.readFileSync(SEARCH_CACHE_FILE, "utf8")) as {
+      records?: Record<string, SearchRecord>;
+    };
+    if (j && j.records) {
+      for (const [name, r] of Object.entries(j.records)) {
+        if (
+          r &&
+          typeof r.mtimeMs === "number" &&
+          typeof r.size === "number" &&
+          typeof r.text === "string"
+        ) {
+          map.set(name, {
+            mtimeMs: r.mtimeMs,
+            size: r.size,
+            text: r.text,
+            seed: typeof r.seed === "number" ? r.seed : null,
+            model: typeof r.model === "string" ? r.model : null,
+            ...(typeof r.width === "number" && typeof r.height === "number"
+              ? { width: r.width, height: r.height }
+              : {}),
+          });
+        }
+      }
+    }
+  } catch {
+    /* no usable cache — everything parses fresh on the first refresh */
+  }
+  searchRecords = map;
+  return map;
+}
+
+function saveSearchRecords(): void {
+  if (!searchRecords) return;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // Write-then-rename so a crash mid-save keeps the previous index.
+    const tmp = SEARCH_CACHE_FILE + ".tmp";
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify({ records: Object.fromEntries(searchRecords) }),
+    );
+    fs.renameSync(tmp, SEARCH_CACHE_FILE);
+  } catch {
+    /* cache persistence is best-effort */
+  }
+}
+
+async function refreshSearchIndex(): Promise<SearchEntry[]> {
+  const records = loadSearchRecords();
+  const names = outputPngNames();
+  const listed = new Set(names);
+  let changed = false;
+  for (const name of [...records.keys()]) {
+    if (!listed.has(name)) {
+      records.delete(name);
+      changed = true;
+    }
+  }
+  const entries: SearchEntry[] = [];
+  for (const name of names) {
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(path.join(OUTPUTS, name));
+    } catch {
+      continue; /* vanished mid-scan */
+    }
+    const prev = records.get(name);
+    if (prev && prev.mtimeMs === st.mtimeMs && prev.size === st.size) {
+      entries.push({ name, ...prev });
+      continue;
+    }
+    try {
+      const rec = buildSearchRecord(name, st);
+      records.set(name, rec);
+      changed = true;
+      entries.push({ name, ...rec });
     } catch {
       /* skip an unreadable PNG */
     }
   }
-  entries.sort((a, b) => b.mtime - a.mtime);
-  searchState = { sig, entries };
+  entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  if (changed) saveSearchRecords();
   return entries;
+}
+
+function loadSearchIndex(): Promise<SearchEntry[]> {
+  if (!searchRefresh) {
+    searchRefresh = refreshSearchIndex()
+      .catch(() => [] as SearchEntry[])
+      .finally(() => {
+        searchRefresh = null;
+      });
+  }
+  return searchRefresh;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -599,7 +762,7 @@ const server = http.createServer(async (req, res) => {
         digits: /^\d+$/.test(t),
       }));
       const favs = new Set(readFavorites());
-      const matched = loadSearchIndex().filter((e) => {
+      const matched = (await loadSearchIndex()).filter((e) => {
         if (favoritesOnly && !favs.has(e.name)) return false;
         return terms.every((t) => {
           if (t.digits && e.seed !== null && e.seed === Number(t.raw)) return true;
@@ -607,7 +770,9 @@ const server = http.createServer(async (req, res) => {
         });
       });
       const items = matched.slice(offset, offset + limit).map((x) => {
-        const dims = pngSize(x.name, x.mtime, x.size);
+        // Dimensions are stored in the index record (#101); pngSize
+        // is only a fallback for a record that has none.
+        const dims = x.width && x.height ? { width: x.width, height: x.height } : pngSize(x.name, x.mtimeMs, x.size);
         return { name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name), seed: x.seed, model: x.model, ...(dims ? { width: dims.width, height: dims.height } : {}) };
       });
       sendJson(res, 200, { ok: true, items, total: matched.length }); return;
