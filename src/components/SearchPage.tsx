@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Heart, Search } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Heart, Search, Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -29,7 +29,7 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // as they are, for accessibility. The results also moved from CSS
 // columns (which filled vertically, scrambling the reading order)
 // to a responsive grid, so items read strictly left-to-right,
-// top-to-bottom in API order, Load-more appends included.
+// top-to-bottom in API order.
 //
 // Improvement #98: the theme toggle is gone from this page (the
 // page has its own fixed Dash theme, so switching was meaningless),
@@ -47,6 +47,14 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // While hidden it is translated off-screen with pointer-events
 // off, visibility hidden and its controls removed from the tab
 // order, so nothing off-screen stays focusable.
+//
+// Improvement #102: Load-more is gone. Results are fetched one
+// page at a time (PAGE_SIZE, the fetchSearch/server page size) and
+// replaced, with Prev/Next buttons, a windowed page-number row
+// (first, last, current +/-2, gaps shown as an ellipsis — an empty
+// query has ~610 pages, so rendering every number is not an
+// option), a "Page X of Y" label, and a Random button that jumps
+// to a random page other than the current one.
 type ColsChoice = "auto" | "1" | "2" | "3" | "4" | "5" | "6";
 
 const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
@@ -75,6 +83,24 @@ function isColsChoice(v: string): v is ColsChoice {
   return COLS_OPTIONS.some((o) => o.value === v);
 }
 
+const PAGE_SIZE = 60;
+
+// Page numbers to render: 1, last, and current +/-2, with "gap"
+// markers where numbers are skipped.
+function pageWindow(page: number, pageCount: number): (number | "gap")[] {
+  const wanted = new Set<number>([1, pageCount]);
+  for (let n = page - 2; n <= page + 2; n++) {
+    if (n >= 1 && n <= pageCount) wanted.add(n);
+  }
+  const sorted = [...wanted].sort((a, b) => a - b);
+  const out: (number | "gap")[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push("gap");
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
 export default function SearchPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -82,8 +108,9 @@ export default function SearchPage() {
   const [items, setItems] = useState<SearchItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [page, setPage] = useState(1);
+  const resultsRef = useRef<HTMLElement>(null);
   // Compact sticky header visibility (improvement #100).
   const [showBar, setShowBar] = useState(false);
   // Column-count choice, persisted under "nai.searchCols". A stored
@@ -93,9 +120,10 @@ export default function SearchPage() {
   const cols: ColsChoice = isColsChoice(colsStored) ? colsStored : "auto";
 
   const runSearch = useCallback(async (q: string, fav: boolean) => {
+    setPage(1);
     setLoading(true);
     try {
-      const { items: list, total: t } = await fetchSearch(q, fav, 0);
+      const { items: list, total: t } = await fetchSearch(q, fav, 0, PAGE_SIZE);
       setItems(list);
       setTotal(t);
     } catch {
@@ -129,16 +157,40 @@ export default function SearchPage() {
     void runSearch(query, next);
   };
 
-  const loadMore = async () => {
-    setLoadingMore(true);
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const goToPage = async (n: number) => {
+    const target = Math.min(Math.max(1, n), pageCount);
+    setLoading(true);
     try {
-      const { items: more, total: t } = await fetchSearch(query, favoritesOnly, items.length);
-      setItems((prev) => [...prev, ...more]);
+      const { items: list, total: t } = await fetchSearch(
+        query,
+        favoritesOnly,
+        (target - 1) * PAGE_SIZE,
+        PAGE_SIZE,
+      );
+      setItems(list);
       setTotal(t);
+      setPage(target);
     } catch {
-      /* keep what is shown */
+      /* keep the current page as-is */
     }
-    setLoadingMore(false);
+    setLoading(false);
+    // Land at the top of the results, offset by roughly the sticky
+    // compact header's height so it does not cover the heading.
+    const el = resultsRef.current;
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - 76;
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    }
+  };
+
+  // Jump to a random page, re-rolling while it lands on the
+  // current one (only called when pageCount > 1).
+  const randomPage = () => {
+    let n = page;
+    while (n === page) n = 1 + Math.floor(Math.random() * pageCount);
+    void goToPage(n);
   };
 
   return (
@@ -283,7 +335,7 @@ export default function SearchPage() {
           </div>
         </section>
 
-        <section>
+        <section ref={resultsRef}>
           <div className="mb-3 flex items-center gap-2">
             <h2 className="text-xl font-semibold">
               {searched ? `${total} ${total === 1 ? "result" : "results"}` : "Results"}
@@ -322,16 +374,65 @@ export default function SearchPage() {
               </a>
             ))}
           </div>
-          {items.length > 0 && items.length < total && (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void loadMore()}
-              disabled={loadingMore}
-              className="mt-8 h-[52px] w-full rounded-lg bg-stone-100 text-base text-stone-900 hover:bg-stone-200"
-            >
-              {loadingMore ? "Loading..." : `Load more (${total - items.length} remaining)`}
-            </Button>
+          {searched && total > PAGE_SIZE && (
+            <nav aria-label="Search result pages" className="mt-10">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void goToPage(page - 1)}
+                  disabled={page <= 1 || loading}
+                  className="h-11 rounded-lg bg-stone-100 px-4 text-stone-700 hover:bg-stone-200"
+                >
+                  Prev
+                </Button>
+                {pageWindow(page, pageCount).map((w, i) =>
+                  w === "gap" ? (
+                    <span key={`gap-${i}`} aria-hidden="true" className="px-1 text-stone-400">
+                      …
+                    </span>
+                  ) : (
+                    <Button
+                      key={w}
+                      type="button"
+                      variant={w === page ? undefined : "secondary"}
+                      onClick={() => void goToPage(w)}
+                      disabled={loading}
+                      aria-current={w === page ? "page" : undefined}
+                      className={
+                        w === page
+                          ? "h-11 min-w-11 rounded-lg bg-blue-600 px-3 text-white hover:bg-blue-700"
+                          : "h-11 min-w-11 rounded-lg bg-stone-100 px-3 text-stone-700 hover:bg-stone-200"
+                      }
+                    >
+                      {w}
+                    </Button>
+                  ),
+                )}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void goToPage(page + 1)}
+                  disabled={page >= pageCount || loading}
+                  className="h-11 rounded-lg bg-stone-100 px-4 text-stone-700 hover:bg-stone-200"
+                >
+                  Next
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={randomPage}
+                  disabled={loading}
+                  className="h-11 rounded-lg bg-stone-100 px-4 text-stone-700 hover:bg-stone-200"
+                >
+                  <Shuffle className="h-4 w-4" />
+                  Random
+                </Button>
+              </div>
+              <p className="mt-3 text-center text-sm text-stone-500">
+                Page {page} of {pageCount}
+              </p>
+            </nav>
           )}
         </section>
       </div>
