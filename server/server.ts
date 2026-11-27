@@ -269,17 +269,41 @@ function extractPngText(buf: Buffer): Map<string, string> | null {
   return out;
 }
 
-// --- Personal tags (improvement #22) ------------------------------------
+// --- Personal tags (improvements #22 + #103) ---------------------------
 // Tags the user actually generates with, aggregated from the Comment
 // metadata of outputs/*.png (main prompt, UC, and every character
-// caption). Cached in memory + data/personal-tags.json, rebuilt when
-// the outputs directory changes (file count / newest mtime signature).
+// caption).
+//
+// #103: the #22 design compared a whole-directory signature and rebuilt
+// the aggregate from EVERY PNG whenever any file changed. With ~37k
+// files in outputs/ that rebuild took ~45s and, being synchronous, it
+// blocked the event loop -- so the first /api/tags call after any
+// generation stalled generation itself. Like the search index (#101),
+// the store is now per-file and persistent: data/personal-tags.json
+// (version 2) keeps each file's own tag counts with its mtime/size, a
+// refresh parses only new or changed files (head-read via
+// extractPngTextHead) and drops deleted ones, and the aggregate is
+// cached behind a version counter. A 10s freshness TTL on top means
+// typing-time /api/tags calls usually skip the directory diff
+// entirely; suggestions may lag reality by up to 10s, never more.
 interface PersonalEntry {
   display: string;
   count: number;
 }
-let personalState: { sig: string; counts: Map<string, PersonalEntry> } | null =
-  null;
+interface PersonalFileRecord {
+  mtimeMs: number;
+  size: number;
+  tags: Record<string, PersonalEntry>;
+}
+let personalFiles: Map<string, PersonalFileRecord> | null = null;
+let personalAgg: {
+  version: number;
+  counts: Map<string, PersonalEntry>;
+} | null = null;
+let personalVersion = 0;
+let personalLastRefresh = 0;
+let personalRefresh: Promise<Map<string, PersonalEntry>> | null = null;
+const PERSONAL_TTL_MS = 10_000;
 
 function normalizeTagKey(s: string): string {
   return s.toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ").trim();
@@ -340,70 +364,142 @@ function promptStringsFromComment(c: Record<string, unknown>): string[] {
   return out;
 }
 
-function outputsSignature(): string {
+// The on-disk per-file store, loaded once per process. An old-format
+// (version 1: {sig, counts}) or unreadable file just means every file
+// parses fresh on the first refresh.
+function loadPersonalFiles(): Map<string, PersonalFileRecord> {
+  if (personalFiles) return personalFiles;
+  const map = new Map<string, PersonalFileRecord>();
   try {
-    const names = fs
-      .readdirSync(OUTPUTS)
-      .filter((f) => f.toLowerCase().endsWith(".png"));
-    let max = 0;
-    for (const n of names) {
-      const m = fs.statSync(path.join(OUTPUTS, n)).mtimeMs;
-      if (m > max) max = m;
+    const j = JSON.parse(fs.readFileSync(PERSONAL_CACHE_FILE, "utf8")) as {
+      version?: number;
+      files?: Record<string, PersonalFileRecord>;
+    };
+    if (j && j.version === 2 && j.files) {
+      for (const [name, r] of Object.entries(j.files)) {
+        if (
+          r &&
+          typeof r.mtimeMs === "number" &&
+          typeof r.size === "number" &&
+          r.tags &&
+          typeof r.tags === "object"
+        ) {
+          map.set(name, { mtimeMs: r.mtimeMs, size: r.size, tags: r.tags });
+        }
+      }
     }
-    return `${names.length}:${Math.round(max)}`;
   } catch {
-    return "0:0";
+    /* no usable cache -- everything parses fresh on the first refresh */
+  }
+  personalFiles = map;
+  return map;
+}
+
+function savePersonalFiles(): void {
+  if (!personalFiles) return;
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    // Write-then-rename so a crash mid-save keeps the previous store.
+    const tmp = PERSONAL_CACHE_FILE + ".tmp";
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify({ version: 2, files: Object.fromEntries(personalFiles) }),
+    );
+    fs.renameSync(tmp, PERSONAL_CACHE_FILE);
+  } catch {
+    /* cache persistence is best-effort */
   }
 }
 
-function loadPersonalCounts(): Map<string, PersonalEntry> {
-  const sig = outputsSignature();
-  if (personalState && personalState.sig === sig) return personalState.counts;
-  try {
-    const j = JSON.parse(fs.readFileSync(PERSONAL_CACHE_FILE, "utf8")) as {
-      sig?: string;
-      counts?: Record<string, PersonalEntry>;
-    };
-    if (j && j.sig === sig && j.counts) {
-      personalState = { sig, counts: new Map(Object.entries(j.counts)) };
-      return personalState.counts;
-    }
-  } catch {
-    /* no usable cache — rebuild below */
-  }
+// One file's tag counts, from its Comment metadata (same inputs as the
+// old full rebuild: promptStringsFromComment + collectTagsFromPrompt).
+function parsePersonalFileTags(name: string): Record<string, PersonalEntry> {
   const counts = new Map<string, PersonalEntry>();
-  let names: string[] = [];
   try {
-    names = fs
-      .readdirSync(OUTPUTS)
-      .filter((f) => f.toLowerCase().endsWith(".png"));
-  } catch {
-    /* no outputs yet */
-  }
-  for (const name of names) {
-    try {
-      const texts = extractPngText(fs.readFileSync(path.join(OUTPUTS, name)));
-      const comment = texts?.get("Comment");
-      if (!comment) continue;
+    const texts = extractPngTextHead(path.join(OUTPUTS, name));
+    const comment = texts?.get("Comment");
+    if (comment) {
       const parsed = JSON.parse(comment) as Record<string, unknown>;
       for (const s of promptStringsFromComment(parsed)) {
         collectTagsFromPrompt(s, counts);
       }
-    } catch {
-      /* skip an unreadable PNG */
+    }
+  } catch {
+    /* unreadable PNG / unparsable Comment -- no tags */
+  }
+  return Object.fromEntries(counts);
+}
+
+// Sum the per-file records into the aggregate the handler serves.
+// Cached behind personalVersion, which bumps only when the store
+// actually changed, so repeat calls don't re-sum ~37k records.
+function aggregatePersonalCounts(): Map<string, PersonalEntry> {
+  if (personalAgg && personalAgg.version === personalVersion) {
+    return personalAgg.counts;
+  }
+  const counts = new Map<string, PersonalEntry>();
+  for (const rec of loadPersonalFiles().values()) {
+    for (const [key, e] of Object.entries(rec.tags)) {
+      const cur = counts.get(key);
+      if (cur) cur.count += e.count;
+      else counts.set(key, { display: e.display, count: e.count });
     }
   }
-  personalState = { sig, counts };
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(
-      PERSONAL_CACHE_FILE,
-      JSON.stringify({ sig, counts: Object.fromEntries(counts) }),
-    );
-  } catch {
-    /* cache persistence is best-effort */
-  }
+  personalAgg = { version: personalVersion, counts };
   return counts;
+}
+
+function refreshPersonalCounts(): Map<string, PersonalEntry> {
+  const files = loadPersonalFiles();
+  const names = outputPngNames();
+  const listed = new Set(names);
+  let changed = false;
+  for (const name of [...files.keys()]) {
+    if (!listed.has(name)) {
+      files.delete(name);
+      changed = true;
+    }
+  }
+  for (const name of names) {
+    let st: fs.Stats;
+    try {
+      st = fs.statSync(path.join(OUTPUTS, name));
+    } catch {
+      continue; /* vanished mid-scan */
+    }
+    const prev = files.get(name);
+    if (prev && prev.mtimeMs === st.mtimeMs && prev.size === st.size) continue;
+    files.set(name, {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      tags: parsePersonalFileTags(name),
+    });
+    changed = true;
+  }
+  if (changed) {
+    personalVersion++;
+    savePersonalFiles();
+  }
+  personalLastRefresh = Date.now();
+  return aggregatePersonalCounts();
+}
+
+// The handler's entry point: serve the cached aggregate while it is
+// fresh (< PERSONAL_TTL_MS since the last completed refresh), else run
+// one refresh shared by all concurrent callers.
+function getPersonalCounts(): Promise<Map<string, PersonalEntry>> {
+  if (personalAgg && Date.now() - personalLastRefresh < PERSONAL_TTL_MS) {
+    return Promise.resolve(personalAgg.counts);
+  }
+  if (!personalRefresh) {
+    personalRefresh = Promise.resolve()
+      .then(() => refreshPersonalCounts())
+      .catch(() => personalAgg?.counts ?? new Map<string, PersonalEntry>())
+      .finally(() => {
+        personalRefresh = null;
+      });
+  }
+  return personalRefresh;
 }
 
 // --- Favorites (improvement #61) ----------------------------------------
@@ -844,7 +940,7 @@ const server = http.createServer(async (req, res) => {
       }
       const items: TagItem[] = [];
       if (q) {
-        const counts = loadPersonalCounts();
+        const counts = await getPersonalCounts();
         const qKey = normalizeTagKey(q);
         const byKey = new Map<string, TagItem>();
         if (qKey) {
