@@ -869,7 +869,7 @@ const server = http.createServer(async (req, res) => {
         // Dimensions are stored in the index record (#101); pngSize
         // is only a fallback for a record that has none.
         const dims = x.width && x.height ? { width: x.width, height: x.height } : pngSize(x.name, x.mtimeMs, x.size);
-        return { name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name), seed: x.seed, model: x.model, ...(dims ? { width: dims.width, height: dims.height } : {}) };
+        return { name: x.name, url: "outputs/" + encodeURIComponent(x.name), favorite: favs.has(x.name), seed: x.seed, model: x.model, mtime: x.mtimeMs, ...(dims ? { width: dims.width, height: dims.height } : {}) };
       });
       sendJson(res, 200, { ok: true, items, total: matched.length }); return;
     }

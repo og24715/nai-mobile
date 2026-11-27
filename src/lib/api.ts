@@ -364,6 +364,7 @@ export interface SearchItem {
   favorite: boolean;
   seed: number | null;
   model: string | null;
+  mtime?: number;
   width?: number;
   height?: number;
 }

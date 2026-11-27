@@ -112,6 +112,20 @@ function versionLabel(model: string | null): string | null {
   return null;
 }
 
+// Date caption under each result (improvement #107): the file's
+// mtime from the search index, formatted YYYY/MM/DD in the
+// viewer's local timezone. Null for a missing/invalid value --
+// no caption is rendered then.
+function dateLabel(mtime: number | undefined): string | null {
+  if (!mtime || !Number.isFinite(mtime)) return null;
+  const d = new Date(mtime);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}/${m}/${day}`;
+}
+
 const PAGE_SIZE = 60;
 
 // --- URL state (improvement #106) --------------------------------
@@ -435,36 +449,40 @@ export default function SearchPage() {
           )}
           <div className={`mt-4 grid items-start gap-5 ${GRID_COLS[cols]}`}>
             {items.map((it) => (
-              <a
-                key={it.name}
-                href={it.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="relative block"
-              >
-                <img
-                  src={it.url}
-                  loading="lazy"
-                  alt=""
-                  width={it.width}
-                  height={it.height}
-                  style={{
-                    aspectRatio:
-                      it.width && it.height ? `${it.width} / ${it.height}` : undefined,
-                  }}
-                  className="block h-auto w-full rounded-lg"
-                />
-                {it.favorite && (
-                  <span className="absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-white">
-                    <Heart className="size-3.5 fill-current" />
-                  </span>
+              <div key={it.name}>
+                <a
+                  href={it.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative block"
+                >
+                  <img
+                    src={it.url}
+                    loading="lazy"
+                    alt=""
+                    width={it.width}
+                    height={it.height}
+                    style={{
+                      aspectRatio:
+                        it.width && it.height ? `${it.width} / ${it.height}` : undefined,
+                    }}
+                    className="block h-auto w-full rounded-lg"
+                  />
+                  {it.favorite && (
+                    <span className="absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-white">
+                      <Heart className="size-3.5 fill-current" />
+                    </span>
+                  )}
+                  {versionLabel(it.model) && (
+                    <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-1.5 py-0.5 text-xs text-white">
+                      {versionLabel(it.model)}
+                    </span>
+                  )}
+                </a>
+                {dateLabel(it.mtime) && (
+                  <p className="mt-1 text-left text-xs text-stone-500">{dateLabel(it.mtime)}</p>
                 )}
-                {versionLabel(it.model) && (
-                  <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-1.5 py-0.5 text-xs text-white">
-                    {versionLabel(it.model)}
-                  </span>
-                )}
-              </a>
+              </div>
             ))}
           </div>
           {searched && total > PAGE_SIZE && (
