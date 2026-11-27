@@ -284,6 +284,87 @@ export default function MainPage() {
     setPendingRestore(mapSettingsToForm(settings, model));
   };
 
+  // Latest restoreFromFile for the paste listener below, which is
+  // bound once per drawer-open and must not go stale.
+  const restoreFromFileRef = useRef(restoreFromFile);
+  restoreFromFileRef.current = restoreFromFile;
+
+  // Restore settings from a clipboard image (improvement #104):
+  // reads the image through the Async Clipboard API, which
+  // browsers only expose in a secure context (HTTPS / localhost);
+  // elsewhere navigator.clipboard.read is undefined and the user
+  // gets an honest error instead of a silent no-op. The image is
+  // fed through the exact same parse flow as a picked file (the
+  // selection dialog and mapping are fully shared) and never
+  // leaves the device.
+  const restoreFromClipboard = async () => {
+    if (!navigator.clipboard?.read) {
+      setStatus({
+        kind: "err",
+        text: "Clipboard is not available on this page (needs HTTPS). Paste the image while this form is open, or open the app via its Tailscale HTTPS address.",
+      });
+      return;
+    }
+    let items: ClipboardItem[];
+    try {
+      items = await navigator.clipboard.read();
+    } catch {
+      setStatus({
+        kind: "err",
+        text: "Clipboard access was denied. Paste the image while this form is open instead.",
+      });
+      return;
+    }
+    for (const item of items) {
+      const type =
+        item.types.find((t) => t === "image/png") ||
+        item.types.find((t) => t.startsWith("image/"));
+      if (!type) continue;
+      try {
+        const blob = await item.getType(type);
+        const ext = type.split("/")[1] || "png";
+        await restoreFromFile(new File([blob], `clipboard.${ext}`, { type }));
+        return;
+      } catch {
+        /* try the next clipboard item */
+      }
+    }
+    setStatus({ kind: "err", text: "No image found in the clipboard" });
+  };
+
+  // Paste fallback for clipboard restore (improvement #104):
+  // while the form drawer is open, an image-only paste is routed
+  // into the same restore flow. A paste that carries any text is
+  // NEVER intercepted (text fields keep their normal paste), and
+  // neither is a paste aimed at a text field.
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      if (cd.getData("text/plain")) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const fileItem = Array.from(cd.items).find(
+        (i) => i.kind === "file" && i.type.startsWith("image/"),
+      );
+      if (!fileItem) return;
+      const f = fileItem.getAsFile();
+      if (!f) return;
+      e.preventDefault();
+      void restoreFromFileRef.current(f);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [modalOpen]);
+
   // Restore settings from the history image currently shown as the
   // hero (improvement #10): fetch the file from the app's own
   // outputs/ serving path (the same URL the <img> uses) and feed it
@@ -655,6 +736,7 @@ export default function MainPage() {
 
   const form: FormState = {
     onRestoreFile: restoreFromFile,
+    onRestoreClipboard: restoreFromClipboard,
     prompt,
     negative,
     model,

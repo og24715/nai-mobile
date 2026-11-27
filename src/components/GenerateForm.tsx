@@ -29,7 +29,7 @@ import {
   AttachmentMedia,
   AttachmentTitle,
 } from "@/components/ui/attachment";
-import { X } from "lucide-react";
+import { ClipboardPaste, X } from "lucide-react";
 import { TagField } from "@/components/TagField";
 import {
   Tabs,
@@ -48,6 +48,10 @@ export interface FormState {
   // since #70 (moved into the form in #47); MainPage owns the
   // parse + selection-dialog flow.
   onRestoreFile: (f: File) => void;
+  // Clipboard variant (improvement #104): MainPage reads the
+  // image from the clipboard (or explains why it cannot) and
+  // feeds it through the same restore flow.
+  onRestoreClipboard: () => void;
   prompt: string;
   negative: string;
   model: string;
@@ -833,6 +837,17 @@ export function GenerateForm({ form }: { form: FormState }) {
         }}
       />
     </label>
+    {/* Clipboard restore (#104): same flow as the file picker
+        above, fed from the clipboard instead. The paste-anywhere
+        fallback while this drawer is open lives in MainPage. */}
+    <button
+      type="button"
+      onClick={() => form.onRestoreClipboard()}
+      className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-background text-base font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+    >
+      <ClipboardPaste className="h-5 w-5" />
+      Restore from Clipboard
+    </button>
     </div>
   );
 }
