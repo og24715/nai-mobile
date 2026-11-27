@@ -59,6 +59,17 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // (bottom-left) derived from the item's model (the PNG Source
 // string), mirroring the favorite heart badge at the top-right.
 // Items whose source names no known family get no badge.
+//
+// Improvement #106: the search term and page are reflected in
+// the URL as ?q=<term>&p=<page> (q is omitted for an empty term),
+// so a result page can be bookmarked or shared and Back/Forward
+// walk the search history. Every user-initiated navigation
+// (submit, favorites toggle, page buttons, Random) pushes a new
+// history entry; popstate loads restore q and p from the URL
+// without pushing. A page past the real page count is clamped
+// once results are known and the URL is corrected with
+// replaceState. The favorites state is deliberately not in the
+// URL and survives popstate unchanged.
 type ColsChoice = "auto" | "1" | "2" | "3" | "4" | "5" | "6";
 
 const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
@@ -103,6 +114,31 @@ function versionLabel(model: string | null): string | null {
 
 const PAGE_SIZE = 60;
 
+// --- URL state (improvement #106) --------------------------------
+// ?q= / ?p= parsing and writing. Writing preserves any other
+// params and builds from location.pathname, so it stays correct
+// under the gateway's /nai/ prefix. p is always written
+// explicitly, including p=1; q is omitted when empty.
+function queryFromUrl(): string {
+  return new URLSearchParams(window.location.search).get("q") ?? "";
+}
+
+function pageFromUrl(): number {
+  const raw = new URLSearchParams(window.location.search).get("p");
+  const n = raw == null ? NaN : Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+function writeSearchUrl(q: string, p: number, replace: boolean): void {
+  const params = new URLSearchParams(window.location.search);
+  if (q) params.set("q", q);
+  else params.delete("q");
+  params.set("p", String(p));
+  const url = `${window.location.pathname}?${params.toString()}`;
+  if (replace) window.history.replaceState(null, "", url);
+  else window.history.pushState(null, "", url);
+}
+
 // Page numbers to render: 1, last, and current +/-2, with "gap"
 // markers where numbers are skipped.
 function pageWindow(page: number, pageCount: number): (number | "gap")[] {
@@ -120,14 +156,16 @@ function pageWindow(page: number, pageCount: number): (number | "gap")[] {
 }
 
 export default function SearchPage() {
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
+  // The initial term and page come from the URL (?q= / ?p=,
+  // improvement #106); both fall back to an empty search, page 1.
+  const [input, setInput] = useState(() => queryFromUrl());
+  const [query, setQuery] = useState(() => queryFromUrl());
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [items, setItems] = useState<SearchItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => pageFromUrl());
   const resultsRef = useRef<HTMLElement>(null);
   // Compact sticky header visibility (improvement #100).
   const [showBar, setShowBar] = useState(false);
@@ -137,24 +175,76 @@ export default function SearchPage() {
   const [colsStored, setColsStored] = usePersistedField("searchCols", "auto");
   const cols: ColsChoice = isColsChoice(colsStored) ? colsStored : "auto";
 
-  const runSearch = useCallback(async (q: string, fav: boolean) => {
-    setPage(1);
-    setLoading(true);
-    try {
-      const { items: list, total: t } = await fetchSearch(q, fav, 0, PAGE_SIZE);
-      setItems(list);
-      setTotal(t);
-    } catch {
-      setItems([]);
-      setTotal(0);
-    }
-    setSearched(true);
-    setLoading(false);
-  }, []);
+  // Fetch one page and make items / total / page agree with it.
+  // The requested page is clamped to the real page count once
+  // the total is known; a clamped load corrects the URL with
+  // replaceState rather than pushing. urlMode "push" is for
+  // user-initiated navigation; "none" is for the initial load
+  // and popstate loads, where the URL is already the source of
+  // truth. On a fetch error the current page is kept as-is.
+  const loadPage = useCallback(
+    async (
+      q: string,
+      fav: boolean,
+      target: number,
+      urlMode: "push" | "none",
+      scroll: boolean,
+    ) => {
+      const wanted = Math.max(1, Math.floor(target) || 1);
+      setLoading(true);
+      try {
+        let res = await fetchSearch(q, fav, (wanted - 1) * PAGE_SIZE, PAGE_SIZE);
+        const count = Math.max(1, Math.ceil(res.total / PAGE_SIZE));
+        const clamped = Math.min(wanted, count);
+        if (clamped !== wanted) {
+          res = await fetchSearch(q, fav, (clamped - 1) * PAGE_SIZE, PAGE_SIZE);
+          writeSearchUrl(q, clamped, true);
+        } else if (urlMode === "push") {
+          writeSearchUrl(q, clamped, false);
+        }
+        setItems(res.items);
+        setTotal(res.total);
+        setPage(clamped);
+      } catch {
+        /* keep the current page as-is */
+      }
+      setSearched(true);
+      setLoading(false);
+      if (scroll) {
+        // Land at the top of the results, offset by roughly the
+        // sticky compact header's height so it does not cover
+        // the heading.
+        const el = resultsRef.current;
+        if (el) {
+          const y = el.getBoundingClientRect().top + window.scrollY - 76;
+          window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+        }
+      }
+    },
+    [],
+  );
 
+  // Initial load: the URL is the source of truth, so a shared
+  // or bookmarked ?q=...&p=... link lands on that exact page.
   useEffect(() => {
-    void runSearch("", false);
-  }, [runSearch]);
+    void loadPage(queryFromUrl(), false, pageFromUrl(), "none", false);
+  }, [loadPage]);
+
+  // Back/Forward: restore q and p from the URL and load them
+  // without pushing a new entry. The favorites toggle is not
+  // in the URL, so it keeps whatever state it currently has.
+  const favoritesRef = useRef(favoritesOnly);
+  favoritesRef.current = favoritesOnly;
+  useEffect(() => {
+    const onPop = () => {
+      const q = queryFromUrl();
+      setInput(q);
+      setQuery(q);
+      void loadPage(q, favoritesRef.current, pageFromUrl(), "none", true);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [loadPage]);
 
   // Show the compact header once the form card is scrolled past.
   useEffect(() => {
@@ -166,41 +256,21 @@ export default function SearchPage() {
 
   const submit = () => {
     setQuery(input);
-    void runSearch(input, favoritesOnly);
+    void loadPage(input, favoritesOnly, 1, "push", false);
   };
 
   const toggleFavorites = () => {
     const next = !favoritesOnly;
     setFavoritesOnly(next);
-    void runSearch(query, next);
+    void loadPage(query, next, 1, "push", false);
   };
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const goToPage = async (n: number) => {
-    const target = Math.min(Math.max(1, n), pageCount);
-    setLoading(true);
-    try {
-      const { items: list, total: t } = await fetchSearch(
-        query,
-        favoritesOnly,
-        (target - 1) * PAGE_SIZE,
-        PAGE_SIZE,
-      );
-      setItems(list);
-      setTotal(t);
-      setPage(target);
-    } catch {
-      /* keep the current page as-is */
-    }
-    setLoading(false);
-    // Land at the top of the results, offset by roughly the sticky
-    // compact header's height so it does not cover the heading.
-    const el = resultsRef.current;
-    if (el) {
-      const y = el.getBoundingClientRect().top + window.scrollY - 76;
-      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
-    }
+  // Page navigation keeps the current q and changes only p in
+  // the URL (improvement #106).
+  const goToPage = (n: number) => {
+    void loadPage(query, favoritesOnly, n, "push", true);
   };
 
   // Jump to a random page, re-rolling while it lands on the
@@ -208,7 +278,7 @@ export default function SearchPage() {
   const randomPage = () => {
     let n = page;
     while (n === page) n = 1 + Math.floor(Math.random() * pageCount);
-    void goToPage(n);
+    goToPage(n);
   };
 
   return (
@@ -403,7 +473,7 @@ export default function SearchPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => void goToPage(page - 1)}
+                  onClick={() => goToPage(page - 1)}
                   disabled={page <= 1 || loading}
                   className="h-11 rounded-lg bg-stone-100 px-4 text-stone-700 hover:bg-stone-200"
                 >
@@ -419,7 +489,7 @@ export default function SearchPage() {
                       key={w}
                       type="button"
                       variant={w === page ? undefined : "secondary"}
-                      onClick={() => void goToPage(w)}
+                      onClick={() => goToPage(w)}
                       disabled={loading}
                       aria-current={w === page ? "page" : undefined}
                       className={
@@ -435,7 +505,7 @@ export default function SearchPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => void goToPage(page + 1)}
+                  onClick={() => goToPage(page + 1)}
                   disabled={page >= pageCount || loading}
                   className="h-11 rounded-lg bg-stone-100 px-4 text-stone-700 hover:bg-stone-200"
                 >
