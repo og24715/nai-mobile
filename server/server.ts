@@ -364,6 +364,139 @@ function promptStringsFromComment(c: Record<string, unknown>): string[] {
   return out;
 }
 
+// --- XMP sidecars for Immich (improvement #108) ---
+// Every PNG saved into outputs/ also gets a "<name>.png.xmp" sidecar
+// so Immich's tag search stays current without a manual batch run.
+// The sidecar mirrors ~/workspace/immich/nai_xmp.py exactly (the tool
+// that backfilled the existing library): digiKam:TagsList built from
+// the POSITIVE prompt strings only, plus dc:description holding the
+// full positive prompt text. It is built from the saved file's own
+// Comment, read back via extractPngTextHead, so it matches the
+// embedded metadata whatever generation path produced the file.
+
+// promptStringsFromComment minus every negative part: for v4 images
+// only the v4_prompt caption block (the top-level prompt/uc duplicate
+// it and are not read), otherwise the top-level prompt only; plus each
+// characterPrompts entry's prompt (never its uc).
+function positivePromptStringsFromComment(c: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  const capStrings = (block: unknown) => {
+    if (!block || typeof block !== "object") return;
+    const cap = (block as { caption?: unknown }).caption;
+    if (!cap || typeof cap !== "object") return;
+    const { base_caption, char_captions } = cap as {
+      base_caption?: unknown;
+      char_captions?: unknown;
+    };
+    if (typeof base_caption === "string") out.push(base_caption);
+    if (Array.isArray(char_captions)) {
+      for (const cc of char_captions) {
+        const t = (cc as { char_caption?: unknown } | null)?.char_caption;
+        if (typeof t === "string") out.push(t);
+      }
+    }
+  };
+  if (c.v4_prompt || c.v4_negative_prompt) {
+    capStrings(c.v4_prompt);
+  } else {
+    if (typeof c.prompt === "string") out.push(c.prompt);
+  }
+  if (Array.isArray(c.characterPrompts)) {
+    for (const cp of c.characterPrompts) {
+      const o = cp as { prompt?: unknown } | null;
+      if (typeof o?.prompt === "string") out.push(o.prompt);
+    }
+  }
+  return out;
+}
+
+// NAI weight token: "1.5::", "-0.3::", ".5::" (weights may span
+// commas, so one can appear anywhere inside a comma-split piece, and
+// stray "::" openers/closers are left behind as well).
+const XMP_WEIGHT_TOKEN = /-?(?:\d+(?:\.\d+)?|\.\d+)::/g;
+
+function cleanXmpTag(piece: string): string | null {
+  let t = piece.trim();
+  t = t.replace(XMP_WEIGHT_TOKEN, "");
+  t = t.split("::").join("");
+  // Emphasis braces/brackets: drop the characters, keep the text.
+  for (const ch of "{}[]") t = t.split(ch).join("");
+  t = t.split(/\s+/).filter(Boolean).join(" ");
+  if (!t || t.length > 120) return null;
+  // "/" is Immich's tag-hierarchy separator; flatten it.
+  t = t.split("/").join("-");
+  return t;
+}
+
+function xmpTagsFromPrompts(prompts: string[]): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  for (const s of prompts) {
+    for (const piece of s.split(",")) {
+      const tag = cleanXmpTag(piece);
+      if (tag !== null && !seen.has(tag)) {
+        seen.add(tag);
+        tags.push(tag);
+      }
+    }
+  }
+  return tags;
+}
+
+// Same escaping as Python's xml.sax.saxutils.escape (default entities).
+function xmlEscapeText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildXmpSidecar(tags: string[], description: string): string {
+  const items = tags.map((t) => `     <rdf:li>${xmlEscapeText(t)}</rdf:li>`).join("\n");
+  return (
+    '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="nai_xmp 1.0">\n' +
+    ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n' +
+    '  <rdf:Description rdf:about=""\n' +
+    '    xmlns:digiKam="http://www.digikam.org/ns/1.0/"\n' +
+    '    xmlns:dc="http://purl.org/dc/elements/1.1/">\n' +
+    "   <digiKam:TagsList>\n" +
+    "    <rdf:Bag>\n" +
+    `${items}\n` +
+    "    </rdf:Bag>\n" +
+    "   </digiKam:TagsList>\n" +
+    "   <dc:description>\n" +
+    "    <rdf:Alt>\n" +
+    `     <rdf:li xml:lang="x-default">${xmlEscapeText(description)}</rdf:li>\n` +
+    "    </rdf:Alt>\n" +
+    "   </dc:description>\n" +
+    "  </rdf:Description>\n" +
+    " </rdf:RDF>\n" +
+    "</x:xmpmeta>\n"
+  );
+}
+
+// Write the sidecar for one PNG already saved in outputs/. Fully
+// self-contained failure-wise: a missing/unparsable Comment just
+// means no sidecar, and any error is logged, never thrown — the
+// generation response must not depend on this.
+function writeXmpSidecar(name: string): void {
+  try {
+    const texts = extractPngTextHead(path.join(OUTPUTS, name));
+    const comment = texts?.get("Comment");
+    if (!comment) return;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(comment) as Record<string, unknown>;
+    } catch {
+      return; /* Comment is not JSON */
+    }
+    if (!parsed || typeof parsed !== "object") return;
+    const prompts = positivePromptStringsFromComment(parsed);
+    if (!prompts.length) return;
+    const xmp = buildXmpSidecar(xmpTagsFromPrompts(prompts), prompts.join(", "));
+    fs.writeFileSync(path.join(OUTPUTS, name + ".xmp"), xmp, "utf8");
+  } catch (e) {
+    console.error(`xmp sidecar failed for ${name}:`, e);
+  }
+}
+
 // The on-disk per-file store, loaded once per process. An old-format
 // (version 1: {sig, counts}) or unreadable file just means every file
 // parses fresh on the first refresh.
@@ -1162,6 +1295,7 @@ const server = http.createServer(async (req, res) => {
       let out = `${base}_up.png`;
       for (let n = 2; fs.existsSync(path.join(OUTPUTS, out)); n++) out = `${base}_up${n}.png`;
       fs.writeFileSync(path.join(OUTPUTS, out), outPng);
+      writeXmpSidecar(out);
       // Same item shape as /api/recent entries.
       sendJson(res, 200, { ok: true, item: { name: out, url: "outputs/" + encodeURIComponent(out) } }); return;
     }
@@ -1307,6 +1441,7 @@ const server = http.createServer(async (req, res) => {
       let out = `${base}_enh.png`;
       for (let n = 2; fs.existsSync(path.join(OUTPUTS, out)); n++) out = `${base}_enh${n}.png`;
       fs.writeFileSync(path.join(OUTPUTS, out), outPng);
+      writeXmpSidecar(out);
       // Same item shape as /api/recent entries.
       sendJson(res, 200, { ok: true, item: { name: out, url: "outputs/" + encodeURIComponent(out) } }); return;
     }
@@ -1417,6 +1552,7 @@ const server = http.createServer(async (req, res) => {
       pngs.forEach((data, idx) => {
         const out = `${stamp}_seed${usedSeed ?? "na"}_${idx}.png`;
         fs.writeFileSync(path.join(OUTPUTS, out), data);
+        writeXmpSidecar(out);
         saved.push("outputs/" + encodeURIComponent(out));
       });
       sendJson(res, 200, { ok: true, images: saved, seed: usedSeed }); return;

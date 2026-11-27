@@ -88,4 +88,5 @@ example は systemd の `%h` (使う人のホーム) 記法で書かれており
 ## 出力
 
 生成した PNG はメタデータそのまま `outputs/` に保存される。
+保存のたびに、Immich のタグ検索用に `<ファイル名>.png.xmp` サイドカー (ポジティブプロンプトから生成した digiKam:TagsList + dc:description) も自動で書き出される。サイドカーの生成に失敗しても生成自体は失敗しない。
 `outputs/*.png` は .gitignore で除外されており、リポジトリには含めない。
