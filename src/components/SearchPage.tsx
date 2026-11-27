@@ -55,6 +55,10 @@ import { fetchSearch, type SearchItem } from "@/lib/api";
 // query has ~610 pages, so rendering every number is not an
 // option), a "Page X of Y" label, and a Random button that jumps
 // to a random page other than the current one.
+// Improvement #105: each thumbnail carries a small version badge
+// (bottom-left) derived from the item's model (the PNG Source
+// string), mirroring the favorite heart badge at the top-right.
+// Items whose source names no known family get no badge.
 type ColsChoice = "auto" | "1" | "2" | "3" | "4" | "5" | "6";
 
 const COLS_OPTIONS: { value: ColsChoice; label: string }[] = [
@@ -81,6 +85,20 @@ const GRID_COLS: Record<ColsChoice, string> = {
 
 function isColsChoice(v: string): v is ColsChoice {
   return COLS_OPTIONS.some((o) => o.value === v);
+}
+
+// Short NAI version label for a result's model (the PNG Source
+// string, improvement #105). V4.5 must be checked before V4.
+// Null when the source names no known family — no badge shown.
+function versionLabel(model: string | null): string | null {
+  if (!model) return null;
+  if (model.startsWith("NovelAI Diffusion V4.5")) return "V4.5";
+  if (model.startsWith("NovelAI Diffusion V5")) return "V5";
+  if (model.startsWith("NovelAI Diffusion V4")) return "V4";
+  if (model.startsWith("NovelAI Diffusion V3")) return "V3";
+  if (model.startsWith("NovelAI Diffusion")) return "NAI";
+  if (model.startsWith("Stable Diffusion XL")) return "SDXL";
+  return null;
 }
 
 const PAGE_SIZE = 60;
@@ -369,6 +387,11 @@ export default function SearchPage() {
                 {it.favorite && (
                   <span className="absolute top-2 right-2 rounded-full bg-black/55 p-1.5 text-white">
                     <Heart className="size-3.5 fill-current" />
+                  </span>
+                )}
+                {versionLabel(it.model) && (
+                  <span className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/55 px-1.5 py-0.5 text-xs text-white">
+                    {versionLabel(it.model)}
                   </span>
                 )}
               </a>
