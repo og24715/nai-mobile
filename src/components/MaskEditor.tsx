@@ -184,8 +184,38 @@ export function MaskEditor({ open, file, width, height, initialMask, onDone, onC
     tctx.drawImage(canvas, 0, 0);
     const data = tctx.getImageData(0, 0, width, height);
     const d = data.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const v = d[i] > 40 ? 255 : 0;
+    // Dilate the painted region by 8px in the exported mask only
+    // (improvement #115, dilation trial at his request). Infill runs
+    // in 1/8 latent space, so a pixel-hard mask edge quantizes into
+    // blocks and seams at the boundary; the grown margin lets the
+    // model blend across it. The on-screen painting is unchanged.
+    const R = 8;
+    let bin = new Uint8Array(width * height);
+    for (let p = 0, i = 0; p < bin.length; p++, i += 4)
+      bin[p] = d[i] > 40 ? 1 : 0;
+    const dilatePass = (srcArr: Uint8Array, horizontal: boolean) => {
+      const out = new Uint8Array(srcArr.length);
+      const outer = horizontal ? height : width;
+      const inner = horizontal ? width : height;
+      const idx = (o: number, n: number) =>
+        horizontal ? o * width + n : n * width + o;
+      for (let o = 0; o < outer; o++) {
+        let count = 0;
+        for (let n = -R; n <= R; n++)
+          if (n >= 0 && n < inner && srcArr[idx(o, n)]) count++;
+        for (let n = 0; n < inner; n++) {
+          out[idx(o, n)] = count > 0 ? 1 : 0;
+          const rem = n - R;
+          if (rem >= 0 && rem < inner && srcArr[idx(o, rem)]) count--;
+          const add = n + R + 1;
+          if (add >= 0 && add < inner && srcArr[idx(o, add)]) count++;
+        }
+      }
+      return out;
+    };
+    bin = dilatePass(dilatePass(bin, true), false);
+    for (let p = 0, i = 0; p < bin.length; p++, i += 4) {
+      const v = bin[p] ? 255 : 0;
       d[i] = v;
       d[i + 1] = v;
       d[i + 2] = v;
