@@ -190,10 +190,15 @@ export default function MainPage() {
   // Upscale parameter dialog (improvement #41): opened from the
   // hero context menu; the run itself happens on execute.
   const [upscaleOpen, setUpscaleOpen] = useState(false);
-  // Enhance parameter dialog + run state (improvement #42), and
-  // the hero image's natural size (reported by the <img> onLoad),
-  // which the dialog's scale chips are computed from. Keyed by
-  // URL so a stale size is never used for a different hero.
+  // Enhance parameter dialog + run state (improvement #42). The
+  // dialog's scale chips are computed from the hero item's own
+  // dimensions (parsed from the PNG header and carried on the
+  // /api/recent items). The <img> onLoad size is kept only as a
+  // fallback for items without parsed dimensions: every carousel
+  // slide reports its load, so the last writer is often a
+  // different slide and the URL-keyed value misses the hero,
+  // which used to collapse the dialog to the 1x-only fallback
+  // (improvement #110).
   const [enhanceOpen, setEnhanceOpen] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
   const [heroSize, setHeroSize] = useState<{ url: string; w: number; h: number } | null>(null);
@@ -811,8 +816,14 @@ export default function MainPage() {
       />
       <EnhanceDialog
         open={enhanceOpen}
-        sourceWidth={heroSize && heroSize.url === heroUrl ? heroSize.w : 0}
-        sourceHeight={heroSize && heroSize.url === heroUrl ? heroSize.h : 0}
+        sourceWidth={
+          items.find((i) => i.url === heroUrl)?.width ??
+          (heroSize && heroSize.url === heroUrl ? heroSize.w : 0)
+        }
+        sourceHeight={
+          items.find((i) => i.url === heroUrl)?.height ??
+          (heroSize && heroSize.url === heroUrl ? heroSize.h : 0)
+        }
         formModel={model}
         onCancel={() => setEnhanceOpen(false)}
         onExecute={(enhScale, strength, noise) => {
