@@ -19,6 +19,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   Attachment,
   AttachmentAction,
@@ -201,7 +202,7 @@ export function GenerateForm({ form }: { form: FormState }) {
     form.updateChars(form.chars.filter((_, j) => j !== i));
   const addChar = () => {
     if (form.chars.length < MAX_CHARS) {
-      form.updateChars([...form.chars, { prompt: "", negative: "" }]);
+      form.updateChars([...form.chars, { prompt: "", negative: "", enabled: true }]);
     }
   };
 
@@ -553,7 +554,14 @@ export function GenerateForm({ form }: { form: FormState }) {
             {form.chars.map((c, i) => (
               <div key={i} className="mt-4 rounded-xl border border-border p-5">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Char {i + 1}</span>
+                  <span className="flex items-center gap-3">
+                    <Switch
+                      checked={c.enabled}
+                      onCheckedChange={(v) => setChar(i, { enabled: v })}
+                      aria-label={`Enable character ${i + 1}`}
+                    />
+                    <span className="text-sm text-muted-foreground">Char {i + 1}</span>
+                  </span>
                   <Button
                     type="button"
                     variant="secondary"
@@ -571,6 +579,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                     chars state (useCharacters / "nai.chars"), so
                     switching tabs never loses either text. The
                     selected tab is not persisted. */}
+                <div className={cn(!c.enabled && "pointer-events-none opacity-50")}>
                 <Tabs defaultValue="positive" className="mt-2">
                   <TabsList variant="line" className="h-9 w-full">
                     <TabsTrigger value="positive">Positive</TabsTrigger>
@@ -597,6 +606,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                     />
                   </TabsContent>
                 </Tabs>
+                </div>
               </div>
             ))}
             {form.chars.length < MAX_CHARS && (

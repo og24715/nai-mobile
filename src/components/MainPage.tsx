@@ -729,7 +729,11 @@ export default function MainPage() {
       // response and is only shown in the status line — it is never
       // written back into the seed field or localStorage.
       seed: seed === "" ? null : Number(seed),
-      characters: chars.map((c) => ({ prompt: c.prompt, negative: c.negative })),
+      // Disabled characters (#112) are left out entirely; the
+      // server assigns caption centers over the ones it receives.
+      characters: chars
+        .filter((c) => c.enabled)
+        .map((c) => ({ prompt: c.prompt, negative: c.negative })),
       ...(image
         ? {
             image,

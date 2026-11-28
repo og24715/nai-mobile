@@ -4,6 +4,10 @@ import { CHARS_KEY, fieldKey, readStored, writeStored } from "@/lib/storage";
 export interface CharPrompt {
   prompt: string;
   negative: string;
+  // Temporary per-character disable (improvement #112): a
+  // disabled character keeps its text (and this flag) in the
+  // persisted list but is left out of generation requests.
+  enabled: boolean;
 }
 
 export const MAX_CHARS = 6;
@@ -20,6 +24,7 @@ function initChars(): CharPrompt[] {
           .map((c) => ({
             prompt: String(c.prompt || ""),
             negative: String(c.negative || ""),
+            enabled: (c as { enabled?: unknown }).enabled !== false,
           }));
       }
     }
@@ -34,10 +39,11 @@ function initChars(): CharPrompt[] {
   ].map(([p, n]) => ({
     prompt: readStored(fieldKey(p)) || "",
     negative: readStored(fieldKey(n)) || "",
+    enabled: true,
   }));
   const chars = old.some((c) => c.prompt || c.negative)
     ? old
-    : [{ prompt: "", negative: "" }];
+    : [{ prompt: "", negative: "", enabled: true }];
   writeStored(CHARS_KEY, JSON.stringify(chars));
   return chars;
 }

@@ -146,6 +146,7 @@ function mapChars(params: Record<string, unknown>): CharPrompt[] | undefined {
   if (Array.isArray(caps)) {
     const ncaps = v4n?.caption?.char_captions;
     return caps.slice(0, 6).map((c, i) => ({
+      enabled: true,
       prompt: splitWeightedSections(str(c?.char_caption) ?? ""),
       negative: splitWeightedSections(
         (Array.isArray(ncaps) ? str(ncaps[i]?.char_caption) : undefined) ??
@@ -158,6 +159,7 @@ function mapChars(params: Record<string, unknown>): CharPrompt[] | undefined {
     return legacy.slice(0, 6).map((c) => {
       const o = (c ?? {}) as { prompt?: unknown; uc?: unknown };
       return {
+        enabled: true,
         prompt: splitWeightedSections(str(o.prompt) ?? ""),
         negative: splitWeightedSections(str(o.uc) ?? ""),
       };
