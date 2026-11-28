@@ -389,7 +389,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 value={[scaleNum]}
                 min={0}
                 max={20}
-                step={0.1}
+                step={0.5}
                 onValueChange={(v) => form.setScale(String(Array.isArray(v) ? v[0] : v))}
               />
             </div>
