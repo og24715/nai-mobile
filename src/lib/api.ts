@@ -66,6 +66,10 @@ export interface GenerateResponse {
 
 export interface SubscriptionUsage {
   percent: number;
+  // Extra Usage from Opus Usage Boosts ("spare battery" items):
+  // a separate pool of up to 400, spent only after the regular
+  // percent runs out. 0 when no boost has been used.
+  purchasedPercent: number;
   isNegative: boolean;
 }
 
@@ -145,6 +149,7 @@ export async function fetchSubscription(
       usage: j.usage
         ? {
             percent: Number(j.usage.percent) || 0,
+            purchasedPercent: Number(j.usage.purchasedPercent) || 0,
             isNegative: !!j.usage.isNegative,
           }
         : null,

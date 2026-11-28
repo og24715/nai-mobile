@@ -1033,7 +1033,7 @@ const server = http.createServer(async (req, res) => {
         tier?: number;
         active?: boolean;
         trainingStepsLeft?: { fixedTrainingStepsLeft?: number; purchasedTrainingSteps?: number };
-        usage?: { percent?: number; isNegative?: boolean } | null;
+        usage?: { percent?: number; purchasedPercent?: number; isNegative?: boolean } | null;
       };
       const trainingStepsLeft = data.trainingStepsLeft
         ? {
@@ -1045,7 +1045,7 @@ const server = http.createServer(async (req, res) => {
         ? trainingStepsLeft.fixedTrainingStepsLeft + trainingStepsLeft.purchasedTrainingSteps
         : null;
       const usage = data.usage
-        ? { percent: Number(data.usage.percent) || 0, isNegative: !!data.usage.isNegative }
+        ? { percent: Number(data.usage.percent) || 0, purchasedPercent: Number(data.usage.purchasedPercent) || 0, isNegative: !!data.usage.isNegative }
         : null;
       sendJson(res, 200, { tier: typeof data.tier === "number" ? data.tier : null, active: !!data.active, anlasTotal, trainingStepsLeft, usage }); return;
     }
