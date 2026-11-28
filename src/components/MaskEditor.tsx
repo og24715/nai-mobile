@@ -34,11 +34,12 @@ interface Props {
 const labelCls = "mb-1.5 block text-sm font-medium text-muted-foreground";
 
 // Full-screen mask painter for inpainting (improvement #111).
-// Strokes land on an overlay canvas in the app's accent color at
-// partial opacity; erasing cuts them back out with
-// destination-out. On Done the overlay's coverage is exported as
-// the black-and-white PNG NovelAI's infill expects (white =
-// repaint, black = keep).
+// Strokes land on an overlay canvas in solid accent color (the
+// canvas element is CSS-translucent, so overlaps stay uniform);
+// erasing cuts them back out with destination-out. On Done the
+// overlay's coverage is thresholded into the black-and-white PNG
+// NovelAI's infill expects (white = repaint, black = keep) — the
+// mask itself is strictly two-valued, with no feathering.
 export function MaskEditor({ open, file, width, height, initialMask, onDone, onClose }: Props) {
   const [src, setSrc] = useState<string | null>(null);
   const [brush, setBrush] = useState(48);
@@ -100,7 +101,7 @@ export function MaskEditor({ open, file, width, height, initialMask, onDone, onC
         d[i] = 233;
         d[i + 1] = 69;
         d[i + 2] = 96;
-        d[i + 3] = on ? 150 : 0;
+        d[i + 3] = on ? 255 : 0;
       }
       tctx.putImageData(data, 0, 0);
       ctx.clearRect(0, 0, width, height);
@@ -145,7 +146,7 @@ export function MaskEditor({ open, file, width, height, initialMask, onDone, onC
       ctx.strokeStyle = "rgba(0, 0, 0, 1)";
     } else {
       ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = "rgba(233, 69, 96, 0.55)";
+      ctx.strokeStyle = "#e94560";
     }
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
@@ -269,7 +270,7 @@ export function MaskEditor({ open, file, width, height, initialMask, onDone, onC
               />
               <canvas
                 ref={canvasRef}
-                className={cn("absolute inset-0 h-full w-full touch-none")}
+                className={cn("absolute inset-0 h-full w-full touch-none opacity-60")}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   e.currentTarget.setPointerCapture(e.pointerId);
