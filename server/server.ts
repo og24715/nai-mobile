@@ -197,6 +197,19 @@ function buildPayload(g: GenInput) {
   if (isInfill) {
     parameters.mask = String(g.mask).replace(/^data:image\/[a-z+]+;base64,/i, "");
     parameters.inpaintImg2ImgStrength = parameters.strength;
+    // Keep the unmasked area pixel-identical to the source:
+    // without add_original_image the whole image is re-decoded
+    // through the model and drifts slightly everywhere, which
+    // compounds over repeated inpaints (his 2026-11-28 report;
+    // his output's metadata recorded add_original_image: False).
+    // Official-style clients send it true for infill.
+    parameters.add_original_image = true;
+    // Color-correct the partially kept masked region against
+    // the original when strength < 1, the nested img2img object
+    // the official-style client sends in that case.
+    if (parameters.strength !== 1) {
+      parameters.img2img = { strength: parameters.strength, color_correct: true };
+    }
   }
   // Vibe Transfer (improvement #44): the three parallel
   // reference_*_multiple arrays, in entry order. For models
