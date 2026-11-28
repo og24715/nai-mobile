@@ -42,6 +42,13 @@ export interface GenerateRequest {
     strength: number;
     informationExtracted: number;
   }[];
+  // Inpaint mask (improvement #111): present only together with
+  // image when a mask was painted in the mask editor. PNG base64
+  // (no data: prefix), black-and-white at exactly the generation
+  // size — white is repainted, black is kept. The server turns
+  // the request into an infill on the model's -inpainting
+  // variant; every infill spends Anlas.
+  mask?: string;
   // Precise Reference (improvement #45): present only when the
   // model supports it (V4.5 family) and at least one entry
   // exists. image is PNG base64 downscaled client-side to a

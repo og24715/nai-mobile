@@ -6,6 +6,7 @@ import { GenerateForm, type FormState } from "@/components/GenerateForm";
 import { RestoreDialog, type RestoreSelection } from "@/components/RestoreDialog";
 import { UpscaleDialog } from "@/components/UpscaleDialog";
 import { EnhanceDialog, type EnhanceScale } from "@/components/EnhanceDialog";
+import { MaskEditor } from "@/components/MaskEditor";
 import { Viewer, type StatusState } from "@/components/Viewer";
 import { useCharacters } from "@/hooks/useCharacters";
 import { usePersistedField } from "@/hooks/usePersistedField";
@@ -57,13 +58,22 @@ export default function MainPage() {
   const [strength, setStrength] = usePersistedField("strength", "0.7");
   const [noise, setNoise] = usePersistedField("noise", "0");
   const [baseImage, setBaseImage] = useState<{ file: File; url: string } | null>(null);
+  // Inpaint mask (improvement #111): black-and-white PNG base64
+  // painted in the mask editor over the base image cover-cropped
+  // to the selected size. Session state like the base image; it
+  // is dropped whenever the base image or the size changes,
+  // because it only aligns with that exact rendering.
+  const [mask, setMask] = useState<string | null>(null);
+  const [maskEditorOpen, setMaskEditorOpen] = useState(false);
   const pickBaseImage = (f: File) => {
+    setMask(null);
     setBaseImage((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return { file: f, url: URL.createObjectURL(f) };
     });
   };
   const clearBaseImage = () => {
+    setMask(null);
     setBaseImage((prev) => {
       if (prev) URL.revokeObjectURL(prev.url);
       return null;
@@ -481,6 +491,7 @@ export default function MainPage() {
     }
     if (sel.seed && r.seed !== undefined) setSeed(r.seed);
     setPendingRestore(null);
+    setMask(null);
     setStatus({ kind: "ok", text: "Settings restored from the image" });
     openModal();
   };
@@ -719,7 +730,14 @@ export default function MainPage() {
       // written back into the seed field or localStorage.
       seed: seed === "" ? null : Number(seed),
       characters: chars.map((c) => ({ prompt: c.prompt, negative: c.negative })),
-      ...(image ? { image, strength: Number(strength), noise: Number(noise) } : {}),
+      ...(image
+        ? {
+            image,
+            strength: Number(strength),
+            noise: Number(noise),
+            ...(mask ? { mask } : {}),
+          }
+        : {}),
       ...(vibePayload ? { vibes: vibePayload } : {}),
       ...(refPayload ? { references: refPayload } : {}),
     };
@@ -756,6 +774,9 @@ export default function MainPage() {
       : null,
     onPickBaseImage: pickBaseImage,
     onClearBaseImage: clearBaseImage,
+    maskSet: mask != null,
+    onEditMask: () => setMaskEditorOpen(true),
+    onClearMask: () => setMask(null),
     strength,
     noise,
     setStrength,
@@ -784,7 +805,10 @@ export default function MainPage() {
     setPrompt,
     setNegative,
     setModel,
-    setSize,
+    setSize: (v: string) => {
+      setSize(v);
+      setMask(null);
+    },
     setSteps,
     setScale,
     setSampler,
@@ -800,6 +824,18 @@ export default function MainPage() {
       <FormModal open={modalOpen} onRequestClose={closeModal}>
         <GenerateForm form={form} />
       </FormModal>
+      <MaskEditor
+        open={maskEditorOpen}
+        file={baseImage?.file ?? null}
+        width={Number(size.split("x")[0]) || 832}
+        height={Number(size.split("x")[1]) || 1216}
+        initialMask={mask}
+        onDone={(m) => {
+          setMask(m);
+          setMaskEditorOpen(false);
+        }}
+        onClose={() => setMaskEditorOpen(false)}
+      />
       <RestoreDialog
         restored={pendingRestore}
         onApply={applyRestore}

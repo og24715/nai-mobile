@@ -68,6 +68,12 @@ export interface FormState {
   baseImage: { name: string; url: string } | null;
   onPickBaseImage: (f: File) => void;
   onClearBaseImage: () => void;
+  // Inpaint mask (improvement #111): painted in the mask editor
+  // over the cover-cropped base image. Only whether one is set
+  // reaches the form; the base64 itself lives in MainPage.
+  maskSet: boolean;
+  onEditMask: () => void;
+  onClearMask: () => void;
   strength: string;
   noise: string;
   setStrength: (v: string) => void;
@@ -429,7 +435,7 @@ export function GenerateForm({ form }: { form: FormState }) {
                 Base Image
                 {form.baseImage && (
                   <span className="ml-1.5 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-                    img2img
+                    {form.maskSet ? "inpaint" : "img2img"}
                   </span>
                 )}
               </Label>
@@ -472,6 +478,29 @@ export function GenerateForm({ form }: { form: FormState }) {
                 </label>
               )}
             </div>
+
+            {form.baseImage && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-11 flex-1 rounded-xl text-base"
+                  onClick={form.onEditMask}
+                >
+                  Edit Mask
+                </Button>
+                {form.maskSet && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-11 rounded-xl px-4 text-base"
+                    onClick={form.onClearMask}
+                  >
+                    Clear Mask
+                  </Button>
+                )}
+              </div>
+            )}
 
             {form.baseImage && (
               <div>

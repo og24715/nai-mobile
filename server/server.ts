@@ -41,6 +41,10 @@ interface GenInput {
   // image is PNG base64 (the client cover-crops/resizes it to the
   // selected generation size); strength / noise are 0..1.
   image?: string; strength?: number; noise?: number;
+  // Inpaint mask (improvement #111): black-and-white PNG base64
+  // at the same size as image (white repaints, black keeps). With
+  // a base image present it turns the request into an infill.
+  mask?: string;
   // Vibe Transfer (improvement #44): vibes already encoded via
   // /api/encode-vibe on the client. Wired into the payload only
   // for models whose capability flags allow it (see modelCaps).
@@ -79,6 +83,15 @@ function modelCaps(model: string): { vibeTransfer: boolean; preciseReference: bo
   return { vibeTransfer: v4, preciseReference: v45 };
 }
 
+// Inpainting model for a base model (improvement #111): the
+// -inpainting variant of the same family. Exception: V5 Curated
+// has no inpainting variant yet, and NovelAI itself routes it to
+// the V4.5 Curated inpainting model.
+function inpaintModelId(model: string): string {
+  if (model === "nai-diffusion-5-curated") return "nai-diffusion-4-5-curated-inpainting";
+  return model + "-inpainting";
+}
+
 function buildPayload(g: GenInput) {
   const model = String(g.model || "nai-diffusion-4-5-full");
   const prompt = String(g.prompt || "").trim();
@@ -95,10 +108,19 @@ function buildPayload(g: GenInput) {
     .slice(0, 6)
     .map((c) => ({ prompt: String(c.prompt).trim(), negative: String(c.negative || "").trim() }));
   const isV4 = V4_MODELS.has(model);
+  // Inpaint (improvement #111): a base image plus a painted mask
+  // makes this an infill. The model actually sent is the
+  // -inpainting variant, and the versioned parameter shape
+  // follows that model (the V5 Curated routing above lands on a
+  // V4.5 model, so it takes the V4.5 shape).
+  const isInfill =
+    typeof g.image === "string" && g.image.length > 0 &&
+    typeof g.mask === "string" && g.mask.length > 0;
+  const effModel = isInfill ? inpaintModelId(model) : model;
 
   let input = prompt;
   const parameters: Record<string, unknown> = {
-    params_version: paramsVersion(model),
+    params_version: paramsVersion(effModel),
     width: Number(g.width) || 832,
     height: Number(g.height) || 1216,
     scale: Number(g.scale) || 5,
@@ -119,7 +141,7 @@ function buildPayload(g: GenInput) {
       input = [prompt, ...chars.map((c) => c.prompt)].filter(Boolean).join(", ");
     }
   } else {
-    if (!model.startsWith("nai-diffusion-5")) {
+    if (!effModel.startsWith("nai-diffusion-5")) {
       parameters.sm = false; parameters.sm_dyn = false;
       parameters.dynamic_thresholding = false;
     }
@@ -167,6 +189,15 @@ function buildPayload(g: GenInput) {
     parameters.noise = clamp01(Number(g.noise), 0);
     if (seed != null) parameters.extra_noise_seed = seed;
   }
+  // Inpaint (improvement #111): the mask rides along and
+  // inpaintImg2ImgStrength mirrors the img2img strength, the
+  // shape the official client sends. Reference features do not
+  // combine with infill in this client, so the vibe / precise
+  // blocks below are skipped when isInfill.
+  if (isInfill) {
+    parameters.mask = String(g.mask).replace(/^data:image\/[a-z+]+;base64,/i, "");
+    parameters.inpaintImg2ImgStrength = parameters.strength;
+  }
   // Vibe Transfer (improvement #44): the three parallel
   // reference_*_multiple arrays, in entry order. For models
   // without the capability the parameters are stripped — never
@@ -175,7 +206,7 @@ function buildPayload(g: GenInput) {
   const vibes = (Array.isArray(g.vibes) ? g.vibes : [])
     .filter((v) => v && typeof v.encoded === "string" && v.encoded.length > 0)
     .slice(0, 4);
-  if (caps.vibeTransfer && vibes.length) {
+  if (!isInfill && caps.vibeTransfer && vibes.length) {
     parameters.reference_image_multiple = vibes.map((v) => String(v.encoded));
     parameters.reference_strength_multiple = vibes.map((v) => clamp01(Number(v.strength), 0.6));
     parameters.reference_information_extracted_multiple = vibes.map((v) => clamp01(Number(v.informationExtracted), 1));
@@ -189,7 +220,7 @@ function buildPayload(g: GenInput) {
   const refs = (Array.isArray(g.references) ? g.references : [])
     .filter((r) => r && typeof r.image === "string" && r.image.length > 0)
     .slice(0, 4);
-  if (caps.preciseReference && refs.length) {
+  if (!isInfill && caps.preciseReference && refs.length) {
     const refType = (t: unknown) =>
       t === "style" || t === "character&style" ? String(t) : "character";
     parameters.director_reference_images = refs.map((r) =>
@@ -202,7 +233,7 @@ function buildPayload(g: GenInput) {
     parameters.director_reference_secondary_strength_values = refs.map((r) => 1 - clamp01(Number(r.fidelity), 0.5));
     parameters.director_reference_information_extracted = refs.map(() => 1.0);
   }
-  return { payload: { input, model, action: isImg2Img ? "img2img" : "generate", parameters }, seed, model };
+  return { payload: { input, model: effModel, action: isInfill ? "infill" : isImg2Img ? "img2img" : "generate", parameters }, seed, model };
 }
 
 const MIME: Record<string, string> = {
